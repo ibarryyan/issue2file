@@ -1,0 +1,38 @@
+# Go编译产物
+issue2file
+issue2file.exe
+*.exe
+*.dll
+*.so
+*.dylib
+
+# Go测试文件
+*.test
+
+# Go覆盖率文件
+*.out
+
+# 依赖目录
+vendor/
+
+# IDE文件
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# 操作系统文件
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# 导出的issues目录
+issues_*/
+
+# 环境变量文件
+.env
