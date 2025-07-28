@@ -23,7 +23,7 @@ func main() {
 	}
 
 	repoArg := os.Args[1]
-	
+
 	var owner, repo string
 	var err error
 
@@ -60,7 +60,7 @@ func main() {
 
 	// 保存issues为Markdown文件
 	for _, issue := range issues {
-		if err := saveIssueAsMarkdown(issue, outputDir); err != nil {
+		if err := saveIssueAsMarkdown(issue, outputDir, owner, repo); err != nil {
 			log.Printf("保存issue #%d 失败: %v", issue.GetNumber(), err)
 		} else {
 			fmt.Printf("已保存 issue #%d: %s\n", issue.GetNumber(), issue.GetTitle())
@@ -92,7 +92,7 @@ func createGitHubClient() *github.Client {
 // 获取仓库的所有issues
 func fetchIssues(client *github.Client, owner, repo string) ([]*github.Issue, error) {
 	ctx := context.Background()
-	
+
 	var allIssues []*github.Issue
 	opts := &github.IssueListByRepoOptions{
 		State: "all", // 获取所有状态的issues
@@ -118,22 +118,59 @@ func fetchIssues(client *github.Client, owner, repo string) ([]*github.Issue, er
 	return allIssues, nil
 }
 
+// 获取issue的所有评论
+func fetchComments(client *github.Client, owner, repo string, issueNumber int) ([]*github.IssueComment, error) {
+	ctx := context.Background()
+
+	var allComments []*github.IssueComment
+	opts := &github.IssueListCommentsOptions{
+		ListOptions: github.ListOptions{
+			PerPage: 100,
+		},
+	}
+
+	for {
+		comments, resp, err := client.Issues.ListComments(ctx, owner, repo, issueNumber, opts)
+		if err != nil {
+			return nil, fmt.Errorf("获取评论失败: %w", err)
+		}
+
+		allComments = append(allComments, comments...)
+
+		if resp.NextPage == 0 {
+			break
+		}
+		opts.Page = resp.NextPage
+	}
+
+	return allComments, nil
+}
+
 // 将issue保存为Markdown文件
-func saveIssueAsMarkdown(issue *github.Issue, outputDir string) error {
+func saveIssueAsMarkdown(issue *github.Issue, outputDir, owner, repo string) error {
 	// 生成文件名，避免特殊字符
 	title := sanitizeFilename(issue.GetTitle())
 	filename := fmt.Sprintf("issue_%d_%s.md", issue.GetNumber(), title)
-	filepath := filepath.Join(outputDir, filename)
+	path := filepath.Join(outputDir, filename)
+
+	// 创建GitHub客户端
+	client := createGitHubClient()
+
+	// 获取issue评论
+	comments, err := fetchComments(client, owner, repo, issue.GetNumber())
+	if err != nil {
+		return fmt.Errorf("获取评论失败: %w", err)
+	}
 
 	// 生成Markdown内容
-	content := generateMarkdownContent(issue)
+	content := generateMarkdownContent(issue, comments)
 
 	// 写入文件
-	return os.WriteFile(filepath, []byte(content), 0644)
+	return os.WriteFile(path, []byte(content), 0644)
 }
 
 // 生成Markdown内容
-func generateMarkdownContent(issue *github.Issue) string {
+func generateMarkdownContent(issue *github.Issue, comments []*github.IssueComment) string {
 	var sb strings.Builder
 
 	// 标题
@@ -145,11 +182,11 @@ func generateMarkdownContent(issue *github.Issue) string {
 	sb.WriteString(fmt.Sprintf("- **状态**: %s\n", issue.GetState()))
 	sb.WriteString(fmt.Sprintf("- **创建者**: @%s\n", issue.GetUser().GetLogin()))
 	sb.WriteString(fmt.Sprintf("- **创建时间**: %s\n", issue.GetCreatedAt().Format("2006-01-02 15:04:05")))
-	
+
 	if !issue.GetUpdatedAt().IsZero() {
 		sb.WriteString(fmt.Sprintf("- **更新时间**: %s\n", issue.GetUpdatedAt().Format("2006-01-02 15:04:05")))
 	}
-	
+
 	if issue.ClosedAt != nil {
 		sb.WriteString(fmt.Sprintf("- **关闭时间**: %s\n", issue.GetClosedAt().Format("2006-01-02 15:04:05")))
 	}
@@ -190,6 +227,20 @@ func generateMarkdownContent(issue *github.Issue) string {
 		sb.WriteString("\n\n")
 	}
 
+	// 评论部分
+	if len(comments) > 0 {
+		sb.WriteString("---\n\n")
+		sb.WriteString("## 评论\n\n")
+
+		for _, comment := range comments {
+			sb.WriteString(fmt.Sprintf("### @%s 评论于 %s\n\n",
+				comment.GetUser().GetLogin(),
+				comment.GetCreatedAt().Format("2006-01-02 15:04:05")))
+			sb.WriteString(comment.GetBody())
+			sb.WriteString("\n\n---\n\n")
+		}
+	}
+
 	return sb.String()
 }
 
@@ -209,13 +260,13 @@ func sanitizeFilename(filename string) string {
 		"\n", "_",
 		"\r", "_",
 	)
-	
+
 	cleaned := replacer.Replace(filename)
-	
+
 	// 限制长度
 	if len(cleaned) > 50 {
 		cleaned = cleaned[:50]
 	}
-	
+
 	return strings.TrimSpace(cleaned)
 }
