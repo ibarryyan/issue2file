@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"flag"
 	"fmt"
 	"log"
 	"os"
@@ -13,16 +14,33 @@ import (
 )
 
 func main() {
-	if len(os.Args) < 2 {
-		fmt.Println("使用方法: issue2file <仓库地址> 或 issue2file .")
-		fmt.Println("示例:")
+	// 定义命令行参数
+	var (
+		token         = flag.String("token", "", "GitHub API token")
+		withComments  = flag.Bool("comments", true, "是否下载issue评论")
+		withAI        = flag.Bool("ai-summary", false, "是否使用AI分析issues")
+		aiToken       = flag.String("ai-token", "", "AI API token")
+		outputDirPath = flag.String("output", "", "指定输出目录")
+		summaryFile   = flag.String("summary-file", "summary.md", "AI分析总结文件名")
+	)
+
+	// 解析命令行参数
+	flag.Parse()
+
+	// 检查是否提供了仓库参数
+	args := flag.Args()
+	if len(args) < 1 {
+		fmt.Println("使用方法: issue2file [选项] <仓库地址>")
+		fmt.Println("选项:")
+		flag.PrintDefaults()
+		fmt.Println("\n示例:")
 		fmt.Println("  issue2file .                    # 从当前目录的git仓库获取issues")
-		fmt.Println("  issue2file owner/repo           # 从指定仓库获取issues")
-		fmt.Println("  issue2file https://github.com/owner/repo  # 从完整URL获取issues")
+		fmt.Println("  issue2file -token=xxx owner/repo # 使用token从指定仓库获取issues")
+		fmt.Println("  issue2file -ai-summary -ai-token=xxx owner/repo # 使用AI分析issues")
 		os.Exit(1)
 	}
 
-	repoArg := os.Args[1]
+	repoArg := args[0]
 
 	var owner, repo string
 	var err error
@@ -44,7 +62,7 @@ func main() {
 	fmt.Printf("正在获取仓库 %s/%s 的issues...\n", owner, repo)
 
 	// 创建GitHub客户端
-	client := createGitHubClient()
+	client := createGitHubClient(*token)
 
 	// 获取issues
 	issues, err := fetchIssues(client, owner, repo)
@@ -53,14 +71,19 @@ func main() {
 	}
 
 	// 创建输出目录
-	outputDir := fmt.Sprintf("issues_%s_%s", owner, repo)
+	var outputDir string
+	if *outputDirPath != "" {
+		outputDir = *outputDirPath
+	} else {
+		outputDir = fmt.Sprintf("issues_%s_%s", owner, repo)
+	}
 	if err := os.MkdirAll(outputDir, 0755); err != nil {
 		log.Fatalf("创建输出目录失败: %v", err)
 	}
 
 	// 保存issues为Markdown文件
 	for _, issue := range issues {
-		if err := saveIssueAsMarkdown(issue, outputDir, owner, repo); err != nil {
+		if err := saveIssueAsMarkdown(issue, outputDir, owner, repo, client, *withComments); err != nil {
 			log.Printf("保存issue #%d 失败: %v", issue.GetNumber(), err)
 		} else {
 			fmt.Printf("已保存 issue #%d: %s\n", issue.GetNumber(), issue.GetTitle())
@@ -68,16 +91,43 @@ func main() {
 	}
 
 	fmt.Printf("完成！共保存了 %d 个issues到目录: %s\n", len(issues), outputDir)
+
+	// 如果启用了AI分析，生成总结
+	if *withAI {
+		// 优先使用命令行参数中的token
+		tokenKey := *aiToken
+
+		// 如果命令行没有提供，尝试从环境变量获取GitHub token
+		if tokenKey == "" {
+			tokenKey = os.Getenv("AI_TOKEN")
+		}
+
+		if tokenKey == "" {
+			log.Println("警告: 启用了AI分析但未提供AI Token，跳过分析")
+		} else {
+			fmt.Println("正在使用AI分析issues...")
+			if err := generateAISummary(issues, outputDir, *summaryFile, tokenKey); err != nil {
+				log.Printf("AI分析失败: %v", err)
+			} else {
+				fmt.Printf("AI分析完成，总结已保存到: %s\n", filepath.Join(outputDir, *summaryFile))
+			}
+		}
+	}
 }
 
 // 创建GitHub客户端
-func createGitHubClient() *github.Client {
-	// 尝试从环境变量获取GitHub token
-	token := os.Getenv("GITHUB_TOKEN")
-	
+func createGitHubClient(tokenParam string) *github.Client {
+	// 优先使用命令行参数中的token
+	token := tokenParam
+
+	// 如果命令行没有提供，尝试从环境变量获取GitHub token
+	if token == "" {
+		token = os.Getenv("GITHUB_TOKEN")
+	}
+
 	if token == "" {
 		// 如果没有token，使用匿名客户端（有API限制）
-		fmt.Println("提示: 未设置GITHUB_TOKEN环境变量，使用匿名访问（API限制较严格）")
+		fmt.Println("提示: 未提供GitHub Token，使用匿名访问（API限制较严格）")
 		return github.NewClient(nil)
 	}
 
@@ -147,19 +197,22 @@ func fetchComments(client *github.Client, owner, repo string, issueNumber int) (
 }
 
 // 将issue保存为Markdown文件
-func saveIssueAsMarkdown(issue *github.Issue, outputDir, owner, repo string) error {
+func saveIssueAsMarkdown(issue *github.Issue, outputDir, owner, repo string, client *github.Client, withComments bool) error {
 	// 生成文件名，避免特殊字符
 	title := sanitizeFilename(issue.GetTitle())
 	filename := fmt.Sprintf("issue_%d_%s.md", issue.GetNumber(), title)
 	path := filepath.Join(outputDir, filename)
 
-	// 创建GitHub客户端
-	client := createGitHubClient()
+	var comments []*github.IssueComment
+	var err error
 
-	// 获取issue评论
-	comments, err := fetchComments(client, owner, repo, issue.GetNumber())
-	if err != nil {
-		return fmt.Errorf("获取评论失败: %w", err)
+	// 根据参数决定是否获取评论
+	if withComments {
+		// 获取issue评论
+		comments, err = fetchComments(client, owner, repo, issue.GetNumber())
+		if err != nil {
+			return fmt.Errorf("获取评论失败: %w", err)
+		}
 	}
 
 	// 生成Markdown内容
