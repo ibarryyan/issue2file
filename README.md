@@ -145,6 +145,12 @@ A: 需要设置AI_TOKEN环境变量，并使用`--ai-summary`参数启用该功�
 - 确保有足够的磁盘空间存储导出的文件
 - AI分析功能需要网络连接和有效的API Token
 
+## TODO 
+
+- [x] 优化AI接入，引入Langchain支持更多模型
+- [x] 优化日志打印
+- [x] 优化AI分析issue质量和准确率
+
 ## 许可证
 
 MIT License

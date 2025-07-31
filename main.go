@@ -13,6 +13,14 @@ import (
 	"golang.org/x/oauth2"
 )
 
+const (
+	AIDeepSeekUrl   = "https://api.deepseek.com/v1/chat/completions"
+	AIModelDeepSeek = "deepseek-chat"
+
+	EnvGitHubToken = "GITHUB_TOKEN"
+	EnvAIToken     = "AI_TOKEN"
+)
+
 func main() {
 	// 定义命令行参数
 	var (
@@ -99,7 +107,7 @@ func main() {
 
 		// 如果命令行没有提供，尝试从环境变量获取GitHub token
 		if tokenKey == "" {
-			tokenKey = os.Getenv("AI_TOKEN")
+			tokenKey = os.Getenv(EnvAIToken)
 		}
 
 		if tokenKey == "" {
@@ -122,7 +130,7 @@ func createGitHubClient(tokenParam string) *github.Client {
 
 	// 如果命令行没有提供，尝试从环境变量获取GitHub token
 	if token == "" {
-		token = os.Getenv("GITHUB_TOKEN")
+		token = os.Getenv(EnvGitHubToken)
 	}
 
 	if token == "" {

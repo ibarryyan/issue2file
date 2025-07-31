@@ -70,7 +70,7 @@ func generateAISummary(issues []*github.Issue, outputDirPath, summaryFile, aiTok
 
 	// 构建AI请求
 	request := AIAnalysisRequest{
-		Model: "deepseek-chat",
+		Model: AIModelDeepSeek,
 		Messages: []Message{
 			{
 				Role:    "user",
@@ -86,7 +86,7 @@ func generateAISummary(issues []*github.Issue, outputDirPath, summaryFile, aiTok
 	}
 
 	// 创建HTTP请求
-	req, err := http.NewRequest("POST", "https://api.deepseek.com/v1/chat/completions", bytes.NewBuffer(requestBody))
+	req, err := http.NewRequest("POST", AIDeepSeekUrl, bytes.NewBuffer(requestBody))
 	if err != nil {
 		return fmt.Errorf("创建HTTP请求失败: %w", err)
 	}
