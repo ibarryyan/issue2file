@@ -1,5 +1,9 @@
 # Issue2File
 
+<a href=""><img src="https://img.shields.io/badge/creator-%E9%97%AB%E5%90%8C%E5%AD%A6-blue" alt=""></a>
+[![](https://img.shields.io/github/stars/ibarryyan/issue2file.svg?style=flat)](https://github.com/ibarryyan/issue2file/stargazers)
+<a href=""><img src="https://img.shields.io/badge/%E5%85%AC%E4%BC%97%E5%8F%B7-%E6%89%AF%E7%BC%96%E7%A8%8B%E7%9A%84%E6%B7%A1-brightgreen" alt=""></a>
+
 一个用Go语言编写的GitHub Issue导出工具，可以将指定GitHub仓库的所有Issue以Markdown格式保存到本地，并支持AI分析总结功能。
 
 ## 功能特性
