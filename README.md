@@ -58,6 +58,35 @@ go run .
 
 # 指定AI分析总结文件名
 ./issue2file owner/repo --ai-summary --summary-file issues-analysis.md
+
+# 使用配置文件
+./issue2file -config=./config.cnf owner/repo
+```
+
+### 配置文件
+
+你可以使用TOML格式的配置文件（.cnf后缀）来设置所有选项：
+
+```toml
+# GitHub和AI令牌
+github_token = "your_github_token"
+ai_token = "your_ai_token"
+
+# 功能开关
+comments = true
+ai_summary = false
+charts = false
+
+# 输出设置
+output_dir = "output_directory"
+summary_file = "summary.md"
+```
+
+项目中提供了一个示例配置文件 `config.example.conf`，你可以复制并修改它：
+
+```bash
+cp config.example.conf config.cnf
+# 编辑 config.cnf 文件设置你的配置
 ```
 
 ### 设置GitHub Token（推荐）

@@ -4,12 +4,12 @@ import (
 	"context"
 	"flag"
 	"fmt"
-	"log"
 	"os"
 	"path/filepath"
 	"strings"
 
 	"github.com/google/go-github/v57/github"
+	log "github.com/sirupsen/logrus"
 	"golang.org/x/oauth2"
 )
 
@@ -24,16 +24,50 @@ const (
 func main() {
 	// 定义命令行参数
 	var (
-		token         = flag.String("token", "", "GitHub API token")
-		withComments  = flag.Bool("comments", true, "是否下载issue评论")
-		withAI        = flag.Bool("ai-summary", false, "是否使用AI分析issues")
-		aiToken       = flag.String("ai-token", "", "AI API token")
-		outputDirPath = flag.String("output", "", "指定输出目录")
-		summaryFile   = flag.String("summary-file", "summary.md", "AI分析总结文件名")
+		token   = flag.String("token", "", "GitHub API token")
+		aiToken = flag.String("aiToken", "", "AI API token")
+
+		commentEnable = flag.Bool("comment", false, "是否下载issue评论")
+		aiEnable      = flag.Bool("ai", false, "是否使用AI分析issues")
+		chartEnable   = flag.Bool("chart", false, "是否生成图表分析")
+
+		outputDir   = flag.String("output", "", "指定输出目录")
+		summaryFile = flag.String("filename", "summary.md", "AI分析总结文件名")
+		configFile  = flag.String("config", "config.example.conf", "指定配置文件路径，配置文件中的参数会覆盖命令行参数")
 	)
 
 	// 解析命令行参数
 	flag.Parse()
+
+	// 如果指定了配置文件，则加载配置文件
+	var config *Config
+	if *configFile != "" {
+		var err error
+		config, err = LoadConfig(*configFile)
+		if err != nil {
+			log.Fatalf("加载配置文件失败: %v \n", err)
+		}
+		fmt.Printf("已加载配置文件: %s\n", *configFile)
+
+		// 使用配置文件中的参数覆盖命令行参数
+		if config.GitHubToken != "" {
+			*token = config.GitHubToken
+		}
+		if config.AIToken != "" {
+			*aiToken = config.AIToken
+		}
+		// 只有当配置文件中明确指定了这些布尔值时才覆盖命令行参数
+		*commentEnable = config.CommentEnable
+		*aiEnable = config.AiEnable
+		*chartEnable = config.ChartEnable
+		if config.OutputDir != "" {
+			*outputDir = config.OutputDir
+		}
+		if config.SummaryFile != "" {
+			*summaryFile = config.SummaryFile
+		}
+		fmt.Printf("config: %+v\n", config)
+	}
 
 	// 检查是否提供了仓库参数
 	args := flag.Args()
@@ -45,6 +79,7 @@ func main() {
 		fmt.Println("  issue2file .                    # 从当前目录的git仓库获取issues")
 		fmt.Println("  issue2file -token=xxx owner/repo # 使用token从指定仓库获取issues")
 		fmt.Println("  issue2file -ai-summary -ai-token=xxx owner/repo # 使用AI分析issues")
+		fmt.Println("  issue2file -config=config.cnf owner/repo # 使用配置文件")
 		os.Exit(1)
 	}
 
@@ -79,19 +114,19 @@ func main() {
 	}
 
 	// 创建输出目录
-	var outputDir string
-	if *outputDirPath != "" {
-		outputDir = *outputDirPath
+	var output string
+	if *outputDir != "" {
+		output = *outputDir
 	} else {
-		outputDir = fmt.Sprintf("issues_%s_%s", owner, repo)
+		output = fmt.Sprintf("issues_%s_%s", owner, repo)
 	}
-	if err := os.MkdirAll(outputDir, 0755); err != nil {
+	if err := os.MkdirAll(output, 0755); err != nil {
 		log.Fatalf("创建输出目录失败: %v", err)
 	}
 
 	// 保存issues为Markdown文件
 	for _, issue := range issues {
-		if err := saveIssueAsMarkdown(issue, outputDir, owner, repo, client, *withComments); err != nil {
+		if err := saveIssueAsMarkdown(issue, output, owner, repo, client, *commentEnable); err != nil {
 			log.Printf("保存issue #%d 失败: %v", issue.GetNumber(), err)
 		} else {
 			fmt.Printf("已保存 issue #%d: %s\n", issue.GetNumber(), issue.GetTitle())
@@ -101,7 +136,7 @@ func main() {
 	fmt.Printf("完成！共保存了 %d 个issues到目录: %s\n", len(issues), outputDir)
 
 	// 如果启用了AI分析，生成总结
-	if *withAI {
+	if *aiEnable {
 		// 优先使用命令行参数中的token
 		tokenKey := *aiToken
 
@@ -114,11 +149,21 @@ func main() {
 			log.Println("警告: 启用了AI分析但未提供AI Token，跳过分析")
 		} else {
 			fmt.Println("正在使用AI分析issues...")
-			if err := generateAISummary(issues, outputDir, *summaryFile, tokenKey); err != nil {
+			if err := generateAISummary(issues, output, *summaryFile, tokenKey); err != nil {
 				log.Printf("AI分析失败: %v", err)
 			} else {
-				fmt.Printf("AI分析完成，总结已保存到: %s\n", filepath.Join(outputDir, *summaryFile))
+				fmt.Printf("AI分析完成，总结已保存到: %s\n", filepath.Join(output, *summaryFile))
 			}
+		}
+	}
+
+	// 如果启用了图表生成，生成图表
+	if *chartEnable {
+		fmt.Println("正在生成图表...")
+		if err := generateCharts(issues, output); err != nil {
+			log.Printf("图表生成失败: %v", err)
+		} else {
+			fmt.Printf("图表生成完成，可在 %s/charts 目录查看\n", output)
 		}
 	}
 }
