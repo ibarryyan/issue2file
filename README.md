@@ -6,7 +6,9 @@
 
 一个用Go语言编写的GitHub Issue导出工具，可以将指定GitHub仓库的所有Issue以Markdown格式保存到本地，并支持AI分析总结、生成图表功能。
 
-<img src="docs/img.png" width="700"  />
+<p style="text-align: center;">
+<img src="docs/img.png" width="600"  />
+</p>
 
 ## 功能特性
 
