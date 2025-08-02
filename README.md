@@ -4,7 +4,9 @@
 [![](https://img.shields.io/github/stars/ibarryyan/issue2file.svg?style=flat)](https://github.com/ibarryyan/issue2file/stargazers)
 <a href=""><img src="https://img.shields.io/badge/%E5%85%AC%E4%BC%97%E5%8F%B7-%E6%89%AF%E7%BC%96%E7%A8%8B%E7%9A%84%E6%B7%A1-brightgreen" alt=""></a>
 
-一个用Go语言编写的GitHub Issue导出工具，可以将指定GitHub仓库的所有Issue以Markdown格式保存到本地，并支持AI分析总结功能。
+一个用Go语言编写的GitHub Issue导出工具，可以将指定GitHub仓库的所有Issue以Markdown格式保存到本地，并支持AI分析总结、生成图表功能。
+
+<img src="docs/img.png" width="700"  />
 
 ## 功能特性
 
@@ -14,6 +16,7 @@
 - 包含Issue的完整信息：标题、状态、创建者、时间、标签、指派人等
 - 支持GitHub API认证，避免API限制
 - 支持使用AI生成Issues分析总结报告
+- 支持生成图表
 
 ## 安装
 
@@ -51,13 +54,13 @@ go run .
 
 ```bash
 # 使用AI生成Issues分析总结
-./issue2file owner/repo --ai-summary
+./issue2file owner/repo --ai
 
 # 指定输出目录
 ./issue2file owner/repo --output ./my-issues
 
 # 指定AI分析总结文件名
-./issue2file owner/repo --ai-summary --summary-file issues-analysis.md
+./issue2file owner/repo --ai --filename issues-analysis.md
 
 # 使用配置文件
 ./issue2file -config=./config.cnf owner/repo
@@ -142,7 +145,7 @@ $ ./issue2file xxx/xxx
 使用AI分析：
 
 ```bash
-$ ./issue2file xxx/xxx --ai-summary
+$ ./issue2file xxx/xxx --ai true 
 正在获取仓库 xxx/xxx 的issues...
 已保存 issue #1: Welcome to xxx
 ...
@@ -184,6 +187,20 @@ A: 需要设置AI_TOKEN环境变量，并使用`--ai-summary`参数启用该功�
 - [x] 优化日志打印
 - [x] 优化AI分析issue质量和准确率
 
+### 欢迎关注我
+
+<img src="docs/wechat.jpg" width="300"/>
+
+有问题或建议可以提交[issue](https://github.com/ibarryyan/issue2file/issues/new)，也可以微信公众号进行留言
+
+### 请作者喝杯咖啡
+
+<img src="docs/wxds.png" width="300"/>
+
+### 致谢
+
+感谢[JetBrains](https://www.jetbrains.com)提供的IDE支持
+
 ## 许可证
 
-MIT License
+[MIT License](LICENSE)
