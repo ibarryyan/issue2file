@@ -189,20 +189,24 @@ A: 需要设置AI_TOKEN环境变量，并使用`--ai-summary`参数启用该功�
 - [x] 优化日志打印
 - [x] 优化AI分析issue质量和准确率
 
-### 欢迎关注我
+## 欢迎关注我
 
 <img src="docs/wechat.jpg" width="300"/>
 
 有问题或建议可以提交[issue](https://github.com/ibarryyan/issue2file/issues/new)，也可以微信公众号进行留言
 
-### 请作者喝杯咖啡
+## 请作者喝杯咖啡
 
 <img src="docs/wxds.png" width="300"/>
 
-### 致谢
+## 致谢
 
 感谢[JetBrains](https://www.jetbrains.com)提供的IDE支持
 
 ## 许可证
 
 [MIT License](LICENSE)
+
+## Star History
+
+[![Star History Chart](https://api.star-history.com/svg?repos=ibarryyan/issue2file&type=Date)](https://www.star-history.com/#ibarryyan/issue2file&Date)
