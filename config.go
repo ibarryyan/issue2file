@@ -15,6 +15,12 @@ type Config struct {
 	// AI API token
 	AIToken string
 
+	// AI Model
+	AIModel string
+
+	// AI Base URL
+	AIBaseURL string
+
 	// 是否下载issue评论
 	CommentEnable bool
 
@@ -55,6 +61,8 @@ func LoadConfig(filePath string) (*Config, error) {
 	return &Config{
 		GitHubToken:   conf.GetString("gitHubToken"),
 		AIToken:       conf.GetString("aiToken"),
+		AIModel:       conf.GetString("aiModel"),
+		AIBaseURL:     conf.GetString("aiBaseURL"),
 		CommentEnable: conf.GetBool("commentEnable"),
 		AiEnable:      conf.GetBool("aiEnable"),
 		ChartEnable:   conf.GetBool("chartEnable"),

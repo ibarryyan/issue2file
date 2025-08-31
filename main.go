@@ -14,9 +14,6 @@ import (
 )
 
 const (
-	AIDeepSeekUrl   = "https://api.deepseek.com/v1/chat/completions"
-	AIModelDeepSeek = "deepseek-chat"
-
 	EnvGitHubToken = "GITHUB_TOKEN"
 	EnvAIToken     = "AI_TOKEN"
 )
@@ -24,8 +21,10 @@ const (
 func main() {
 	// 定义命令行参数
 	var (
-		token   = flag.String("token", "", "GitHub API token")
-		aiToken = flag.String("aiToken", "", "AI API token")
+		token     = flag.String("token", "", "GitHub API token")
+		aiToken   = flag.String("aiToken", "", "AI API token")
+		aiModel   = flag.String("aiModel", "deepseek-chat", "AI model name")
+		aiBaseURL = flag.String("aiBaseURL", "https://api.deepseek.com/v1/chat/completions", "AI base URL")
 
 		commentEnable = flag.Bool("comment", false, "是否下载issue评论")
 		aiEnable      = flag.Bool("ai", false, "是否使用AI分析issues")
@@ -55,6 +54,12 @@ func main() {
 		}
 		if config.AIToken != "" {
 			*aiToken = config.AIToken
+		}
+		if config.AIModel != "" {
+			*aiModel = config.AIModel
+		}
+		if config.AIBaseURL != "" {
+			*aiBaseURL = config.AIBaseURL
 		}
 		// 只有当配置文件中明确指定了这些布尔值时才覆盖命令行参数
 		*commentEnable = config.CommentEnable
@@ -149,7 +154,7 @@ func main() {
 			log.Println("警告: 启用了AI分析但未提供AI Token，跳过分析")
 		} else {
 			fmt.Println("正在使用AI分析issues...")
-			if err := generateAISummary(issues, output, *summaryFile, tokenKey); err != nil {
+			if err := generateAISummary(issues, output, *summaryFile, tokenKey, *aiModel, *aiBaseURL); err != nil {
 				log.Printf("AI分析失败: %v", err)
 			} else {
 				fmt.Printf("AI分析完成，总结已保存到: %s\n", filepath.Join(output, *summaryFile))
