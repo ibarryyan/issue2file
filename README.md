@@ -188,6 +188,7 @@ A: 需要设置AI_TOKEN环境变量，并使用`--ai-summary`参数启用该功�
 - [x] 优化AI接入，引入Langchain支持更多模型
 - [x] 优化日志打印
 - [x] 优化AI分析issue质量和准确率
+- [x] prompt工程化
 
 ## 欢迎关注我
 
