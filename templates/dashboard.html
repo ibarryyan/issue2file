@@ -1,0 +1,308 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{{.Title}} · Issues 可视化面板</title>
+<script src="https://cdn.jsdelivr.net/npm/echarts@5.5.1/dist/echarts.min.js"></script>
+<style>
+:root{
+  --bg:#f6f7f9; --card:#ffffff; --border:#e4e7ec; --border-strong:#d0d5dd;
+  --text:#1f2328; --muted:#6b7280; --accent:#2f6feb;
+  --open:#d97706; --closed:#16a34a;
+}
+*{box-sizing:border-box}
+body{
+  margin:0; background:var(--bg); color:var(--text);
+  font:14px/1.6 -apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Hiragino Sans GB","Microsoft YaHei",sans-serif;
+}
+header{background:var(--card); border-bottom:1px solid var(--border); padding:18px 28px}
+.header-inner{max-width:1400px; margin:0 auto; display:flex; align-items:baseline; gap:14px; flex-wrap:wrap}
+h1{margin:0; font-size:19px; font-weight:600}
+h1 a{color:var(--text); text-decoration:none}
+h1 a:hover{color:var(--accent)}
+.meta{color:var(--muted); font-size:13px}
+main{max-width:1400px; margin:0 auto; padding:22px 28px 56px}
+section{margin-bottom:22px}
+.kpis{display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); gap:14px}
+.kpi{background:var(--card); border:1px solid var(--border); border-radius:10px; padding:16px 18px}
+.kpi .label{color:var(--muted); font-size:12px}
+.kpi .value{font-size:26px; font-weight:600; line-height:1.25; margin-top:4px}
+.kpi .sub{color:var(--muted); font-size:12px; margin-top:2px}
+.charts{display:grid; grid-template-columns:repeat(auto-fit,minmax(440px,1fr)); gap:14px}
+.card{background:var(--card); border:1px solid var(--border); border-radius:10px; padding:16px 18px}
+.card h2{margin:0 0 10px; font-size:14px; font-weight:600}
+.chart{width:100%; height:320px}
+.controls{display:flex; gap:10px; flex-wrap:wrap; align-items:center; margin-bottom:12px}
+input[type=search],select{
+  border:1px solid var(--border-strong); border-radius:7px; padding:7px 10px;
+  font:inherit; color:var(--text); background:var(--card); outline:none;
+}
+input[type=search]{min-width:260px}
+input[type=search]:focus,select:focus{border-color:var(--accent)}
+.count{color:var(--muted); font-size:13px; margin-left:auto}
+.table-wrap{overflow-x:auto}
+table{border-collapse:collapse; width:100%; font-size:13px}
+th,td{padding:9px 10px; text-align:left; border-bottom:1px solid var(--border); vertical-align:top}
+th{color:var(--muted); font-weight:500; white-space:nowrap; background:#fbfbfc}
+th.sortable{cursor:pointer; user-select:none}
+th.sortable:hover{color:var(--accent)}
+tbody tr:hover{background:#fafbfc}
+td.num{font-variant-numeric:tabular-nums; color:var(--muted)}
+td.title{min-width:320px}
+td.title a{color:var(--text); text-decoration:none}
+td.title a:hover{color:var(--accent); text-decoration:underline}
+.badge{display:inline-block; padding:1px 8px; border-radius:20px; font-size:12px; white-space:nowrap}
+.badge.open{background:#fef3e2; color:#92400e; border:1px solid #fcd9a8}
+.badge.closed{background:#e6f6ec; color:#166534; border:1px solid #b7e4c7}
+.tag{display:inline-block; padding:1px 7px; margin:1px 3px 1px 0; border-radius:5px; font-size:12px; background:#eef2ff; color:#3730a3; border:1px solid #dbe1fb}
+.tag-empty{color:var(--border-strong)}
+.pager{display:flex; gap:8px; align-items:center; justify-content:flex-end; margin-top:12px}
+button{
+  border:1px solid var(--border-strong); background:var(--card); color:var(--text);
+  border-radius:7px; padding:6px 12px; font:inherit; cursor:pointer;
+}
+button:hover:not(:disabled){border-color:var(--accent); color:var(--accent)}
+button:disabled{opacity:.45; cursor:not-allowed}
+.warn{background:#fff7ed; border:1px solid #fcd9a8; color:#92400e; border-radius:8px; padding:10px 14px; margin-bottom:16px}
+.empty{color:var(--muted); padding:26px; text-align:center}
+</style>
+</head>
+<body>
+<header>
+  <div class="header-inner">
+    <h1><a href="{{.RepoURL}}" target="_blank" rel="noopener">{{.Title}}</a></h1>
+    <span class="meta">Issues 可视化面板 · 生成于 {{.GeneratedAt}}</span>
+  </div>
+</header>
+
+<main>
+  <div id="cdn-warn" class="warn" hidden>ECharts 资源未能加载（当前可能处于离线状态），图表区域为空；下方 Issue 表格与筛选功能不受影响。</div>
+
+  <section class="kpis" id="kpis"></section>
+
+  <section class="charts">
+    <div class="card"><h2>状态分布</h2><div class="chart" id="chart-status"></div></div>
+    <div class="card"><h2>标签 TOP 10</h2><div class="chart" id="chart-labels"></div></div>
+    <div class="card"><h2>月度新建 / 关闭趋势</h2><div class="chart" id="chart-monthly"></div></div>
+    <div class="card"><h2>创建者 TOP 10</h2><div class="chart" id="chart-creators"></div></div>
+  </section>
+
+  <section class="card">
+    <h2>Issue 明细</h2>
+    <div class="controls">
+      <input type="search" id="q" placeholder="搜索标题 / 作者 / 标签…">
+      <select id="f-state"><option value="">全部状态</option><option value="open">open</option><option value="closed">closed</option></select>
+      <select id="f-label"><option value="">全部标签</option></select>
+      <select id="f-size">
+        <option value="20">每页 20 条</option>
+        <option value="50">每页 50 条</option>
+        <option value="100">每页 100 条</option>
+      </select>
+      <span class="count" id="count"></span>
+    </div>
+    <div class="table-wrap">
+      <table>
+        <thead><tr>
+          <th class="sortable" data-key="number">#</th>
+          <th class="sortable" data-key="title">标题</th>
+          <th class="sortable" data-key="state">状态</th>
+          <th class="sortable" data-key="author">作者</th>
+          <th>标签</th>
+          <th class="sortable" data-key="comments">评论</th>
+          <th class="sortable" data-key="createdAt">创建时间</th>
+          <th class="sortable" data-key="days">天数</th>
+        </tr></thead>
+        <tbody id="tbody"></tbody>
+      </table>
+    </div>
+    <div class="pager">
+      <button id="prev">上一页</button>
+      <span class="count" id="page-info"></span>
+      <button id="next">下一页</button>
+    </div>
+  </section>
+</main>
+
+<script>
+const DATA = {{.Data}};
+
+const PALETTE = ["#378ADD","#1D9E75","#BA7517","#D4537E","#534AB7","#D85A30","#639922","#0F6E56","#888780","#85B7EB"];
+const GRID = {left:56, right:24, top:24, bottom:48, containLabel:true};
+const AXIS = {axisLine:{lineStyle:{color:"#d0d5dd"}}, axisLabel:{color:"#6b7280", fontSize:11}, nameTextStyle:{color:"#6b7280", fontSize:11}};
+const SPLIT = {splitLine:{lineStyle:{color:"#eef0f3"}}};
+
+const fmt = n => (n === null || n === undefined) ? "-" : Number(n).toLocaleString("zh-CN");
+// 防御性取值：历史版本的 issues.json 里 labels 可能是 null
+const labelsOf = it => Array.isArray(it.labels) ? it.labels : [];
+const esc = s => String(s === null || s === undefined ? "" : s).replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+
+function renderKpis(){
+  const s = DATA.summary;
+  const cards = [
+    {label:"Issue 总数", value:fmt(s.total), sub:`已排除 Pull Request`},
+    {label:"未关闭", value:fmt(s.open), sub:`占比 ${s.openRate}%`, color:"var(--open)"},
+    {label:"已关闭", value:fmt(s.closed), sub:`占比 ${s.closeRate}%`, color:"var(--closed)"},
+    {label:"平均关闭耗时", value:(s.closeDays === null ? "-" : s.closeDays + " 天"), sub:"已关闭 Issue 均值"},
+    {label:"未结平均存活", value:(s.openAgeDays === null ? "-" : s.openAgeDays + " 天"), sub:"距今仍未关闭"},
+    {label:"参与人数", value:fmt(s.contributors), sub:`使用 ${fmt(s.labelCount)} 个标签`},
+  ];
+  document.getElementById("kpis").innerHTML = cards.map(c =>
+    `<div class="kpi"><div class="label">${esc(c.label)}</div>
+     <div class="value"${c.color ? ` style="color:${c.color}"` : ""}>${esc(c.value)}</div>
+     <div class="sub">${esc(c.sub)}</div></div>`).join("");
+}
+
+function newChart(id){
+  const el = document.getElementById(id);
+  if (!el || typeof echarts === "undefined") return null;
+  const c = echarts.init(el);
+  window.addEventListener("resize", () => c.resize());
+  return c;
+}
+
+function renderCharts(){
+  if (typeof echarts === "undefined"){
+    document.getElementById("cdn-warn").hidden = false;
+    return;
+  }
+  const legend = {textStyle:{color:"#6b7280", fontSize:11}, bottom:0};
+
+  const st = newChart("chart-status");
+  if (st) st.setOption({
+    color:PALETTE, tooltip:{trigger:"item", formatter:"{b}: {c} ({d}%)"},
+    legend:legend,
+    series:[{type:"pie", radius:["45%","68%"], center:["50%","46%"], data:DATA.statusDist,
+      label:{color:"#1f2328", fontSize:12, formatter:"{b}\n{c}"},
+      labelLine:{lineStyle:{color:"#d0d5dd"}}}]
+  });
+
+  const lb = newChart("chart-labels");
+  if (lb){
+    const d = DATA.labelDist.slice().reverse();
+    lb.setOption({
+      color:["#378ADD"], grid:{...GRID, left:100}, tooltip:{trigger:"axis", axisPointer:{type:"shadow"}},
+      xAxis:{type:"value", ...AXIS, ...SPLIT},
+      yAxis:{type:"category", data:d.map(x => x.name), ...AXIS, axisTick:{show:false}},
+      series:[{type:"bar", data:d.map(x => x.value), barMaxWidth:18, itemStyle:{borderRadius:[0,4,4,0]},
+        label:{show:true, position:"right", color:"#6b7280", fontSize:11}}]
+    });
+  }
+
+  const mo = newChart("chart-monthly");
+  if (mo){
+    const m = DATA.monthly;
+    // 月份少时用并列柱状更直观；月份多时柱体会挤到 1~2px 无法辨认，改用折线
+    const useBars = m.length <= 24;
+    const trend = (name, key) => useBars
+      ? {name:name, type:"bar", data:m.map(x => x[key]), barMaxWidth:16, itemStyle:{borderRadius:[3,3,0,0]}}
+      : {name:name, type:"line", data:m.map(x => x[key]), symbol:"none", smooth:true,
+         lineStyle:{width:2}, areaStyle:{opacity:0.08}};
+
+    mo.setOption({
+      color:["#378ADD","#1D9E75","#BA7517"], grid:GRID,
+      tooltip:{trigger:"axis"}, legend:legend,
+      xAxis:{type:"category", data:m.map(x => x.month), ...AXIS, axisTick:{show:false},
+        axisLabel:{...AXIS.axisLabel, rotate:m.length > 18 ? 45 : 0}},
+      yAxis:[{type:"value", name:"数量", ...AXIS, ...SPLIT}, {type:"value", name:"累计", ...AXIS, splitLine:{show:false}}],
+      series:[
+        trend("新建", "created"),
+        trend("关闭", "closed"),
+        {name:"累计存量", type:"line", yAxisIndex:1, smooth:true, symbol:"none",
+         data:m.map(x => x.backlog), lineStyle:{width:2, type:"dashed"}}
+      ]
+    });
+  }
+
+  const cr = newChart("chart-creators");
+  if (cr){
+    const d = DATA.creators.slice().reverse();
+    cr.setOption({
+      color:["#534AB7"], grid:{...GRID, left:100}, tooltip:{trigger:"axis", axisPointer:{type:"shadow"}},
+      xAxis:{type:"value", ...AXIS, ...SPLIT},
+      yAxis:{type:"category", data:d.map(x => x.name), ...AXIS, axisTick:{show:false}},
+      series:[{type:"bar", data:d.map(x => x.value), barMaxWidth:18, itemStyle:{borderRadius:[0,4,4,0]},
+        label:{show:true, position:"right", color:"#6b7280", fontSize:11}}]
+    });
+  }
+}
+
+const state = {q:"", state:"", label:"", sortKey:"number", sortDir:"desc", page:1, size:20};
+let filtered = [];
+
+function applyFilter(){
+  const q = state.q.trim().toLowerCase();
+  filtered = DATA.issues.filter(it => {
+    if (state.state && it.state !== state.state) return false;
+    if (state.label && !labelsOf(it).includes(state.label)) return false;
+    if (!q) return true;
+    return it.title.toLowerCase().includes(q)
+      || it.author.toLowerCase().includes(q)
+      || labelsOf(it).join(" ").toLowerCase().includes(q);
+  });
+  const dir = state.sortDir === "asc" ? 1 : -1;
+  filtered.sort((a, b) => {
+    const x = a[state.sortKey], y = b[state.sortKey];
+    if (typeof x === "number" && typeof y === "number") return (x - y) * dir;
+    return String(x).localeCompare(String(y), "zh-CN") * dir;
+  });
+  const pages = Math.max(1, Math.ceil(filtered.length / state.size));
+  if (state.page > pages) state.page = pages;
+  renderTable(pages);
+}
+
+function renderTable(pages){
+  const start = (state.page - 1) * state.size;
+  const rows = filtered.slice(start, start + state.size);
+
+  document.getElementById("tbody").innerHTML = rows.length ? rows.map(it => `
+    <tr>
+      <td class="num">#${esc(it.number)}</td>
+      <td class="title"><a href="${esc(it.url)}" target="_blank" rel="noopener">${esc(it.title)}</a></td>
+      <td><span class="badge ${it.state === "open" ? "open" : "closed"}">${esc(it.state)}</span></td>
+      <td>${esc(it.author)}</td>
+      <td>${labelsOf(it).length ? labelsOf(it).map(l => `<span class="tag">${esc(l)}</span>`).join("") : `<span class="tag-empty">—</span>`}</td>
+      <td class="num">${esc(it.comments)}</td>
+      <td class="num">${esc(it.createdAt)}</td>
+      <td class="num">${esc(it.days === null ? "—" : it.days)}</td>
+    </tr>`).join("") : `<tr><td colspan="8" class="empty">没有符合条件的 Issue</td></tr>`;
+
+  document.getElementById("count").textContent = `筛选出 ${filtered.length} / ${DATA.issues.length} 条`;
+  document.getElementById("page-info").textContent = `第 ${state.page} / ${pages} 页`;
+  document.getElementById("prev").disabled = state.page <= 1;
+  document.getElementById("next").disabled = state.page >= pages;
+}
+
+function initControls(){
+  const labels = [...new Set(DATA.issues.flatMap(i => labelsOf(i)))].sort((a, b) => a.localeCompare(b, "zh-CN"));
+  const sel = document.getElementById("f-label");
+  labels.forEach(l => sel.insertAdjacentHTML("beforeend", `<option value="${esc(l)}">${esc(l)}</option>`));
+
+  let timer = null;
+  document.getElementById("q").addEventListener("input", e => {
+    clearTimeout(timer);
+    timer = setTimeout(() => { state.q = e.target.value; state.page = 1; applyFilter(); }, 150);
+  });
+  document.getElementById("f-state").addEventListener("change", e => { state.state = e.target.value; state.page = 1; applyFilter(); });
+  document.getElementById("f-label").addEventListener("change", e => { state.label = e.target.value; state.page = 1; applyFilter(); });
+  document.getElementById("f-size").addEventListener("change", e => { state.size = Number(e.target.value); state.page = 1; applyFilter(); });
+  document.getElementById("prev").addEventListener("click", () => { if (state.page > 1) { state.page--; applyFilter(); } });
+  document.getElementById("next").addEventListener("click", () => { state.page++; applyFilter(); });
+
+  document.querySelectorAll("th.sortable").forEach(th => {
+    th.addEventListener("click", () => {
+      const k = th.dataset.key;
+      if (state.sortKey === k) state.sortDir = state.sortDir === "asc" ? "desc" : "asc";
+      else { state.sortKey = k; state.sortDir = (k === "number" || k === "comments" || k === "days") ? "desc" : "asc"; }
+      applyFilter();
+    });
+  });
+}
+
+renderKpis();
+renderCharts();
+initControls();
+applyFilter();
+</script>
+</body>
+</html>

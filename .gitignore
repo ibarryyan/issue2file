@@ -36,3 +36,11 @@ issues_*/
 
 # 环境变量文件
 .env
+
+# 本地配置文件（含 token，勿提交）
+config.cnf
+config.conf
+*.local.conf
+
+# 会话/工具数据
+.workbuddy/

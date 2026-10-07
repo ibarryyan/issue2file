@@ -18,6 +18,49 @@ const (
 	EnvAIToken     = "AI_TOKEN"
 )
 
+// normalizeArgs 把位置参数（仓库地址）挪到所有 flag 之后。
+// Go 标准库的 flag 包在遇到第一个非 flag 参数时会停止解析，
+// 这会导致 `issue2file owner/repo -ai` 中的 -ai 被当成位置参数而静默失效；
+// README 里的用法正是这种顺序，所以这里先做一次重排再交给 flag 解析。
+func normalizeArgs(args []string) []string {
+	var flags, positional []string
+
+	isFlagToken := func(s string) bool {
+		return len(s) > 1 && strings.HasPrefix(s, "-") && s != "--"
+	}
+
+	for i := 0; i < len(args); i++ {
+		a := args[i]
+		if !isFlagToken(a) {
+			positional = append(positional, a)
+			continue
+		}
+
+		flags = append(flags, a)
+
+		// -name=value 形式自带取值，不需要再消费后续参数
+		if strings.Contains(a, "=") {
+			continue
+		}
+
+		name := strings.TrimLeft(a, "-")
+		f := flag.Lookup(name)
+		if f == nil {
+			continue // 未知 flag，交给 flag 包去报错
+		}
+		// 只有非 bool 类型的 flag 才会以独立参数的形式跟一个取值
+		if bf, ok := f.Value.(interface{ IsBoolFlag() bool }); ok && bf.IsBoolFlag() {
+			continue
+		}
+		if i+1 < len(args) && !isFlagToken(args[i+1]) {
+			i++
+			flags = append(flags, args[i])
+		}
+	}
+
+	return append(flags, positional...)
+}
+
 func main() {
 	// 定义命令行参数
 	var (
@@ -29,6 +72,12 @@ func main() {
 		commentEnable = flag.Bool("comment", false, "是否下载issue评论")
 		aiEnable      = flag.Bool("ai", false, "是否使用AI分析issues")
 		chartEnable   = flag.Bool("chart", false, "是否生成图表分析")
+		// 可视化面板默认开启：这是本工具最主要的产出之一
+		dashboardEnable = flag.Bool("dashboard", true, "是否生成可视化面板 dashboard.html 与 issues.json")
+
+		includePR = flag.Bool("includePR", false, "是否把 Pull Request 也当作 issue 导出（默认过滤）")
+		serve     = flag.Bool("serve", false, "导出完成后在本地启动 Web 服务浏览面板")
+		port      = flag.Int("port", 8080, "-serve 模式下的监听端口")
 
 		outputDir   = flag.String("output", "", "指定输出目录")
 		summaryFile = flag.String("filename", "summary.md", "AI分析总结文件名")
@@ -36,7 +85,7 @@ func main() {
 	)
 
 	// 解析命令行参数
-	flag.Parse()
+	flag.CommandLine.Parse(normalizeArgs(os.Args[1:]))
 
 	// 如果指定了配置文件，则加载配置文件
 	var config *Config
@@ -61,17 +110,36 @@ func main() {
 		if config.AIBaseURL != "" {
 			*aiBaseURL = config.AIBaseURL
 		}
-		// 只有当配置文件中明确指定了这些布尔值时才覆盖命令行参数
-		*commentEnable = config.CommentEnable
-		*aiEnable = config.AiEnable
-		*chartEnable = config.ChartEnable
+		// 只有当配置文件中明确声明了这些键时才覆盖命令行参数
+		if config.CommentEnable != nil {
+			*commentEnable = *config.CommentEnable
+		}
+		if config.AiEnable != nil {
+			*aiEnable = *config.AiEnable
+		}
+		if config.ChartEnable != nil {
+			*chartEnable = *config.ChartEnable
+		}
+		if config.DashboardEnable != nil {
+			*dashboardEnable = *config.DashboardEnable
+		}
+		if config.IncludePR != nil {
+			*includePR = *config.IncludePR
+		}
+		if config.Serve != nil {
+			*serve = *config.Serve
+		}
+		if config.Port > 0 {
+			*port = config.Port
+		}
 		if config.OutputDir != "" {
 			*outputDir = config.OutputDir
 		}
 		if config.SummaryFile != "" {
 			*summaryFile = config.SummaryFile
 		}
-		fmt.Printf("config: %+v\n", config)
+		// 打印脱敏后的配置摘要，不要把 token 打到终端或日志
+		fmt.Printf("config: %s\n", config)
 	}
 
 	// 检查是否提供了仓库参数
@@ -82,9 +150,12 @@ func main() {
 		flag.PrintDefaults()
 		fmt.Println("\n示例:")
 		fmt.Println("  issue2file .                    # 从当前目录的git仓库获取issues")
-		fmt.Println("  issue2file -token=xxx owner/repo # 使用token从指定仓库获取issues")
-		fmt.Println("  issue2file -ai-summary -ai-token=xxx owner/repo # 使用AI分析issues")
+		fmt.Println("  issue2file owner/repo           # 导出并生成可视化面板 dashboard.html")
+		fmt.Println("  issue2file owner/repo -serve    # 导出后启动本地服务，浏览器打开面板")
+		fmt.Println("  issue2file owner/repo -ai       # 使用AI分析issues")
 		fmt.Println("  issue2file -config=config.cnf owner/repo # 使用配置文件")
+		fmt.Println()
+		fmt.Println("提示: GitHub Token 建议用环境变量 GITHUB_TOKEN 传入，避免出现在命令行历史中")
 		os.Exit(1)
 	}
 
@@ -113,9 +184,12 @@ func main() {
 	client := createGitHubClient(*token)
 
 	// 获取issues
-	issues, err := fetchIssues(client, owner, repo)
+	issues, err := fetchIssues(client, owner, repo, *includePR)
 	if err != nil {
 		log.Fatalf("获取issues失败: %v", err)
+	}
+	if len(issues) == 0 {
+		log.Fatalf("仓库 %s/%s 没有可导出的 issue（也可能是 API 限流或权限不足）", owner, repo)
 	}
 
 	// 创建输出目录
@@ -138,7 +212,18 @@ func main() {
 		}
 	}
 
-	fmt.Printf("完成！共保存了 %d 个issues到目录: %s\n", len(issues), outputDir)
+	fmt.Printf("完成！共保存了 %d 个issues到目录: %s\n", len(issues), output)
+
+	// 生成可视化面板（dashboard.html + issues.json）
+	if *dashboardEnable {
+		fmt.Println("正在生成可视化面板...")
+		page, err := GenerateDashboard(owner, repo, output, issues)
+		if err != nil {
+			log.Printf("可视化面板生成失败: %v", err)
+		} else {
+			fmt.Printf("可视化面板已生成: %s（数据集: %s）\n", page, filepath.Join(output, "issues.json"))
+		}
+	}
 
 	// 如果启用了AI分析，生成总结
 	if *aiEnable {
@@ -171,6 +256,13 @@ func main() {
 			fmt.Printf("图表生成完成，可在 %s/charts 目录查看\n", output)
 		}
 	}
+
+	// 启动本地 Web 服务浏览产出（阻塞直到 Ctrl+C）
+	if *serve {
+		if err := serveOutput(output, *port); err != nil {
+			log.Fatalf("启动本地服务失败: %v", err)
+		}
+	}
 }
 
 // 创建GitHub客户端
@@ -198,10 +290,13 @@ func createGitHubClient(tokenParam string) *github.Client {
 }
 
 // 获取仓库的所有issues
-func fetchIssues(client *github.Client, owner, repo string) ([]*github.Issue, error) {
+// GitHub 的 /issues 接口会把 Pull Request 一并返回（每个 PR 在 REST 语义上也是一个 issue），
+// 默认按 IsPullRequest() 过滤掉，否则统计与图表口径会被 PR 污染。
+func fetchIssues(client *github.Client, owner, repo string, includePR bool) ([]*github.Issue, error) {
 	ctx := context.Background()
 
 	var allIssues []*github.Issue
+	var pulled int
 	opts := &github.IssueListByRepoOptions{
 		State: "all", // 获取所有状态的issues
 		ListOptions: github.ListOptions{
@@ -215,12 +310,22 @@ func fetchIssues(client *github.Client, owner, repo string) ([]*github.Issue, er
 			return nil, fmt.Errorf("获取issues失败: %w", err)
 		}
 
-		allIssues = append(allIssues, issues...)
+		pulled += len(issues)
+		for _, issue := range issues {
+			if !includePR && issue.IsPullRequest() {
+				continue
+			}
+			allIssues = append(allIssues, issue)
+		}
 
 		if resp.NextPage == 0 {
 			break
 		}
 		opts.Page = resp.NextPage
+	}
+
+	if !includePR && pulled != len(allIssues) {
+		fmt.Printf("已过滤 %d 个 Pull Request，剩余 %d 个 issue\n", pulled-len(allIssues), len(allIssues))
 	}
 
 	return allIssues, nil
@@ -372,12 +477,18 @@ func sanitizeFilename(filename string) string {
 		"\r", "_",
 	)
 
-	cleaned := replacer.Replace(filename)
+	cleaned := strings.TrimSpace(replacer.Replace(filename))
 
-	// 限制长度
-	if len(cleaned) > 50 {
-		cleaned = cleaned[:50]
+	// 按 rune 截断：按字节截断会把多字节字符切一半，产出非法 UTF-8 的文件名
+	runes := []rune(cleaned)
+	if len(runes) > 50 {
+		runes = runes[:50]
 	}
+	// 结尾的点或空格在 Windows 上不允许
+	cleaned = strings.TrimRight(string(runes), ". ")
 
-	return strings.TrimSpace(cleaned)
+	if cleaned == "" {
+		return "untitled"
+	}
+	return cleaned
 }
