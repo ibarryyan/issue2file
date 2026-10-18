@@ -10,7 +10,6 @@ import (
 
 	"github.com/google/go-github/v57/github"
 	log "github.com/sirupsen/logrus"
-	"golang.org/x/oauth2"
 )
 
 const (
@@ -82,10 +81,22 @@ func main() {
 		outputDir   = flag.String("output", "", "指定输出目录")
 		summaryFile = flag.String("filename", "summary.md", "AI分析总结文件名")
 		configFile  = flag.String("config", "config.example.conf", "指定配置文件路径，配置文件中的参数会覆盖命令行参数")
+
+		web       = flag.Bool("web", false, "启动 Web 交互界面（不带仓库参数时默认进入）")
+		noBrowser = flag.Bool("noBrowser", false, "Web 模式下不自动打开浏览器")
 	)
 
 	// 解析命令行参数
 	flag.CommandLine.Parse(normalizeArgs(os.Args[1:]))
+
+	// 只有显式写了 -config 才要求配置文件必须存在；
+	// 默认路径缺失时静默跳过，否则「直接双击运行」会因为找不到示例配置而退出。
+	configExplicit := false
+	flag.Visit(func(f *flag.Flag) {
+		if f.Name == "config" {
+			configExplicit = true
+		}
+	})
 
 	// 如果指定了配置文件，则加载配置文件
 	var config *Config
@@ -93,8 +104,15 @@ func main() {
 		var err error
 		config, err = LoadConfig(*configFile)
 		if err != nil {
-			log.Fatalf("加载配置文件失败: %v \n", err)
+			if configExplicit {
+				log.Fatalf("加载配置文件失败: %v \n", err)
+			}
+			log.Debugf("未加载默认配置文件 %s: %v", *configFile, err)
+			config = nil
 		}
+	}
+
+	if config != nil {
 		fmt.Printf("已加载配置文件: %s\n", *configFile)
 
 		// 使用配置文件中的参数覆盖命令行参数
@@ -144,19 +162,32 @@ func main() {
 
 	// 检查是否提供了仓库参数
 	args := flag.Args()
-	if len(args) < 1 {
-		fmt.Println("使用方法: issue2file [选项] <仓库地址>")
-		fmt.Println("选项:")
-		flag.PrintDefaults()
-		fmt.Println("\n示例:")
-		fmt.Println("  issue2file .                    # 从当前目录的git仓库获取issues")
-		fmt.Println("  issue2file owner/repo           # 导出并生成可视化面板 dashboard.html")
-		fmt.Println("  issue2file owner/repo -serve    # 导出后启动本地服务，浏览器打开面板")
-		fmt.Println("  issue2file owner/repo -ai       # 使用AI分析issues")
-		fmt.Println("  issue2file -config=config.cnf owner/repo # 使用配置文件")
-		fmt.Println()
-		fmt.Println("提示: GitHub Token 建议用环境变量 GITHUB_TOKEN 传入，避免出现在命令行历史中")
-		os.Exit(1)
+
+	// 不带仓库参数（或显式 -web）时进入 Web 交互模式：
+	// 页面里填仓库链接、必要时填 Token，拉取 issue 后可多选做深度分析。
+	if *web || len(args) < 1 {
+		if len(args) < 1 {
+			fmt.Println("未指定仓库，进入 Web 交互模式（在页面填写仓库链接即可开始）")
+		}
+		ghToken := *token
+		if ghToken == "" {
+			ghToken = os.Getenv(EnvGitHubToken)
+		}
+		aiKey := *aiToken
+		if aiKey == "" {
+			aiKey = os.Getenv(EnvAIToken)
+		}
+		if err := runWebServer(webOptions{
+			Port:        *port,
+			GitHubToken: ghToken,
+			AIToken:     aiKey,
+			AIModel:     *aiModel,
+			AIBaseURL:   *aiBaseURL,
+			OpenBrowser: !*noBrowser,
+		}); err != nil {
+			log.Fatalf("Web 服务异常退出: %v", err)
+		}
+		return
 	}
 
 	repoArg := args[0]
@@ -278,25 +309,32 @@ func createGitHubClient(tokenParam string) *github.Client {
 	if token == "" {
 		// 如果没有token，使用匿名客户端（有API限制）
 		fmt.Println("提示: 未提供GitHub Token，使用匿名访问（API限制较严格）")
-		return github.NewClient(nil)
 	}
 
-	// 使用token创建认证客户端
-	ts := oauth2.StaticTokenSource(
-		&oauth2.Token{AccessToken: token},
-	)
-	tc := oauth2.NewClient(context.Background(), ts)
-	return github.NewClient(tc)
+	client, err := newGitHubClient(token, "")
+	if err != nil {
+		// newGitHubClient 只在 baseURL 非法时才出错，这里传的是空串，不会发生
+		log.Fatalf("创建GitHub客户端失败: %v", err)
+	}
+	return client
 }
 
 // 获取仓库的所有issues
 // GitHub 的 /issues 接口会把 Pull Request 一并返回（每个 PR 在 REST 语义上也是一个 issue），
 // 默认按 IsPullRequest() 过滤掉，否则统计与图表口径会被 PR 污染。
 func fetchIssues(client *github.Client, owner, repo string, includePR bool) ([]*github.Issue, error) {
-	ctx := context.Background()
+	return fetchIssuesWithContext(context.Background(), client, owner, repo, includePR, 0)
+}
 
+// maxIssuePages 是分页硬上限：即使 API 一直返回 NextPage 也不会无限循环。
+const maxIssuePages = 500
+
+// fetchIssuesWithContext 支持调用方传入 ctx（Web 模式需要超时控制）。
+// limit > 0 时最多返回 limit 条，用于给超大仓库兜底。
+func fetchIssuesWithContext(ctx context.Context, client *github.Client, owner, repo string, includePR bool, limit int) ([]*github.Issue, error) {
 	var allIssues []*github.Issue
 	var pulled int
+	var truncated bool
 	opts := &github.IssueListByRepoOptions{
 		State: "all", // 获取所有状态的issues
 		ListOptions: github.ListOptions{
@@ -304,7 +342,7 @@ func fetchIssues(client *github.Client, owner, repo string, includePR bool) ([]*
 		},
 	}
 
-	for {
+	for page := 0; page < maxIssuePages; page++ {
 		issues, resp, err := client.Issues.ListByRepo(ctx, owner, repo, opts)
 		if err != nil {
 			return nil, fmt.Errorf("获取issues失败: %w", err)
@@ -315,10 +353,14 @@ func fetchIssues(client *github.Client, owner, repo string, includePR bool) ([]*
 			if !includePR && issue.IsPullRequest() {
 				continue
 			}
+			if limit > 0 && len(allIssues) >= limit {
+				truncated = true
+				break
+			}
 			allIssues = append(allIssues, issue)
 		}
 
-		if resp.NextPage == 0 {
+		if resp.NextPage == 0 || truncated {
 			break
 		}
 		opts.Page = resp.NextPage
@@ -327,14 +369,19 @@ func fetchIssues(client *github.Client, owner, repo string, includePR bool) ([]*
 	if !includePR && pulled != len(allIssues) {
 		fmt.Printf("已过滤 %d 个 Pull Request，剩余 %d 个 issue\n", pulled-len(allIssues), len(allIssues))
 	}
+	if truncated {
+		fmt.Printf("issue 数量超过上限 %d，已截断\n", limit)
+	}
 
 	return allIssues, nil
 }
 
 // 获取issue的所有评论
 func fetchComments(client *github.Client, owner, repo string, issueNumber int) ([]*github.IssueComment, error) {
-	ctx := context.Background()
+	return fetchCommentsWithContext(context.Background(), client, owner, repo, issueNumber)
+}
 
+func fetchCommentsWithContext(ctx context.Context, client *github.Client, owner, repo string, issueNumber int) ([]*github.IssueComment, error) {
 	var allComments []*github.IssueComment
 	opts := &github.IssueListCommentsOptions{
 		ListOptions: github.ListOptions{

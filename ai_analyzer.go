@@ -12,6 +12,32 @@ import (
 	"github.com/tmc/langchaingo/llms/openai"
 )
 
+// 默认 AI 配置，与 main.go 中的 flag 默认值保持一致。
+const (
+	defaultAIModel   = "deepseek-chat"
+	defaultAIBaseURL = "https://api.deepseek.com/v1/chat/completions"
+)
+
+// newLLMClient 创建 OpenAI 兼容的 LLM 客户端；model / baseURL 为空时回落默认值。
+func newLLMClient(token, model, baseURL string) (llms.Model, error) {
+	if model == "" {
+		model = defaultAIModel
+	}
+	if baseURL == "" {
+		baseURL = defaultAIBaseURL
+	}
+	llm, err := openai.New(openai.WithToken(token), openai.WithModel(model), openai.WithBaseURL(baseURL))
+	if err != nil {
+		return nil, fmt.Errorf("创建AI客户端失败: %w", err)
+	}
+	return llm, nil
+}
+
+// generateFromPrompt 统一封装单次问答，便于测试替换与统一超时。
+func generateFromPrompt(ctx context.Context, llm llms.Model, prompt string) (string, error) {
+	return llms.GenerateFromSinglePrompt(ctx, llm, prompt)
+}
+
 // 使用AI生成issues总结
 func generateAISummary(issues []*github.Issue, outputDirPath, summaryFile, aiToken, aiModel, aiBaseURL string) error {
 	// 准备AI分析的输入数据

@@ -94,6 +94,12 @@ func floatPtr(f float64) *float64 { return &f }
 // BuildDashboardData 把 GitHub issue 列表聚合成面板数据集。
 // 传入的 issues 允许包含 Pull Request，这里会统一过滤掉。
 func BuildDashboardData(owner, repo string, issues []*github.Issue) DashboardData {
+	return BuildDashboardDataWith(owner, repo, issues, false)
+}
+
+// BuildDashboardDataWith 与 BuildDashboardData 一致，但允许调用方决定是否保留 Pull Request。
+// Web 模式下用户勾选「包含 PR」时，列表与统计口径必须保持一致，否则 KPI 与表格会对不上。
+func BuildDashboardDataWith(owner, repo string, issues []*github.Issue, includePR bool) DashboardData {
 	now := time.Now()
 
 	data := DashboardData{
@@ -113,7 +119,10 @@ func BuildDashboardData(owner, repo string, issues []*github.Issue) DashboardDat
 	creatorCount := make(map[string]int)
 
 	for _, issue := range issues {
-		if issue == nil || issue.IsPullRequest() {
+		if issue == nil {
+			continue
+		}
+		if !includePR && issue.IsPullRequest() {
 			continue
 		}
 

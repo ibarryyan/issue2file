@@ -1,0 +1,1018 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>issue2file · GitHub Issue 分析工作台</title>
+<style>
+:root{
+  --bg:#f5f6f8; --card:#ffffff; --border:#e4e7ec; --border-soft:#eef0f3;
+  --text:#15181d; --muted:#667085; --faint:#98a2b3;
+  --primary:#4f46e5; --primary-dark:#4338ca; --primary-soft:#eef2ff;
+  --danger:#b42318; --danger-soft:#fef3f2; --warn:#b54708; --warn-soft:#fffaeb;
+  --ok:#067647; --ok-soft:#ecfdf3;
+  --shadow:0 1px 2px rgba(16,24,40,.06),0 1px 3px rgba(16,24,40,.1);
+  --radius:12px;
+}
+*{box-sizing:border-box}
+html,body{margin:0;padding:0}
+body{
+  background:var(--bg); color:var(--text);
+  font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Hiragino Sans GB","Microsoft YaHei",sans-serif;
+  font-size:14px; line-height:1.6; -webkit-font-smoothing:antialiased;
+  padding-bottom:24px;
+}
+body.has-bar{padding-bottom:88px}
+a{color:var(--primary);text-decoration:none}
+a:hover{text-decoration:underline}
+h1,h2,h3,h4{margin:0;font-weight:650;line-height:1.35}
+
+.topbar{
+  position:sticky; top:0; z-index:50; display:flex; align-items:center; justify-content:space-between;
+  height:56px; padding:0 20px; background:rgba(255,255,255,.92); backdrop-filter:blur(8px);
+  border-bottom:1px solid var(--border);
+}
+.brand{display:flex;align-items:center;gap:9px;font-weight:650;letter-spacing:.2px}
+.logo{
+  display:inline-flex;align-items:center;justify-content:center;width:26px;height:26px;border-radius:7px;
+  background:var(--primary);color:#fff;font-size:12px;font-weight:700;letter-spacing:.5px;
+}
+.topbar-right{display:flex;align-items:center;gap:10px}
+.repo-tag{
+  font-size:12px;color:var(--muted);background:var(--border-soft);
+  padding:3px 10px;border-radius:999px;max-width:280px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+}
+main{max-width:1180px;margin:0 auto;padding:0 20px}
+
+/* hero */
+.hero{padding:56px 0 28px;text-align:center}
+.hero h1{font-size:30px;letter-spacing:-.4px}
+.hero .sub{margin:10px auto 26px;max-width:640px;color:var(--muted)}
+.hero.compact{padding:28px 0 18px}
+.hero.compact h1{font-size:22px}
+.hero.compact .sub{display:none}
+
+.search-card{
+  max-width:720px;margin:0 auto;background:var(--card);border:1px solid var(--border);
+  border-radius:16px;padding:18px;box-shadow:var(--shadow);text-align:left;
+}
+.input-row{display:flex;gap:10px}
+.input-row input{
+  flex:1;min-width:0;height:44px;padding:0 14px;font-size:15px;color:var(--text);
+  border:1px solid var(--border);border-radius:10px;background:#fff;outline:none;transition:border-color .15s,box-shadow .15s;
+}
+.input-row input:focus{border-color:var(--primary);box-shadow:0 0 0 3px rgba(79,70,229,.12)}
+.chips{display:flex;flex-wrap:wrap;gap:8px;margin-top:10px}
+.chip{
+  border:1px solid var(--border);background:#fff;color:var(--muted);font-size:12px;
+  padding:4px 10px;border-radius:999px;cursor:pointer;font-family:inherit;
+}
+.chip:hover{border-color:var(--primary);color:var(--primary)}
+.adv-toggle{margin-top:12px;text-align:center}
+.link{background:none;border:none;color:var(--primary);cursor:pointer;font-size:13px;font-family:inherit;padding:0}
+.adv{margin-top:14px;padding-top:14px;border-top:1px dashed var(--border);display:grid;gap:12px}
+.field{display:grid;gap:5px}
+.field>span{font-size:13px;font-weight:600}
+.field small{display:block;font-weight:400;color:var(--faint);font-size:12px}
+.field input{
+  height:38px;padding:0 12px;border:1px solid var(--border);border-radius:8px;font-size:13px;outline:none;width:100%;
+}
+.field input:focus{border-color:var(--primary);box-shadow:0 0 0 3px rgba(79,70,229,.12)}
+.checks{display:flex;flex-wrap:wrap;gap:16px}
+.check{display:inline-flex;align-items:center;gap:6px;font-size:13px;color:var(--muted);cursor:pointer}
+.check input{width:15px;height:15px;accent-color:var(--primary);cursor:pointer}
+.hint{margin-top:12px;font-size:12px;color:var(--ok);background:var(--ok-soft);padding:8px 10px;border-radius:8px}
+
+/* buttons */
+.btn{
+  display:inline-flex;align-items:center;justify-content:center;gap:6px;height:38px;padding:0 16px;
+  border-radius:9px;border:1px solid var(--border);background:#fff;color:var(--text);
+  font-size:13px;font-weight:600;cursor:pointer;font-family:inherit;transition:all .15s;white-space:nowrap;
+}
+.btn:hover{border-color:#cfd4dc;background:#fafbfc}
+.btn.primary{background:var(--primary);border-color:var(--primary);color:#fff}
+.btn.primary:hover{background:var(--primary-dark);border-color:var(--primary-dark)}
+.btn.ghost{background:#fff}
+.btn.sm{height:30px;padding:0 12px;font-size:12px}
+.btn:disabled{opacity:.55;cursor:not-allowed}
+.btn.lg{height:44px;padding:0 22px;font-size:15px}
+
+/* alerts / loading */
+.alert{margin:16px auto 0;max-width:720px;padding:11px 14px;border-radius:10px;font-size:13px;white-space:pre-wrap}
+.alert.err{background:var(--danger-soft);color:var(--danger);border:1px solid #fda29b}
+.alert.warn{background:var(--warn-soft);color:var(--warn);border:1px solid #fec84b}
+.loading{display:flex;align-items:center;justify-content:center;gap:10px;margin-top:18px;color:var(--muted);font-size:13px}
+.spinner{
+  width:16px;height:16px;border:2px solid var(--border);border-top-color:var(--primary);
+  border-radius:50%;animation:spin .8s linear infinite;
+}
+@keyframes spin{to{transform:rotate(360deg)}}
+
+/* cards */
+.card{background:var(--card);border:1px solid var(--border);border-radius:var(--radius);box-shadow:var(--shadow);padding:16px}
+.card-head{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:12px;flex-wrap:wrap}
+.card-head h3{font-size:15px}
+.muted{color:var(--muted);font-size:12px}
+section{margin-bottom:18px}
+
+/* repo card */
+.repo-card{display:flex;flex-wrap:wrap;gap:16px;align-items:flex-start;justify-content:space-between}
+.repo-main{flex:1;min-width:280px}
+.repo-title{display:flex;align-items:center;gap:8px;flex-wrap:wrap;font-size:17px;font-weight:650}
+.repo-title a{color:var(--text)}
+.repo-desc{color:var(--muted);margin-top:6px;font-size:13px}
+.badge{font-size:11px;padding:2px 8px;border-radius:999px;background:var(--border-soft);color:var(--muted);font-weight:600}
+.badge.private{background:var(--warn-soft);color:var(--warn)}
+.badge.archived{background:var(--danger-soft);color:var(--danger)}
+.repo-stats{display:flex;gap:18px;flex-wrap:wrap;margin-top:12px}
+.repo-stats div{font-size:12px;color:var(--muted)}
+.repo-stats b{display:block;font-size:16px;color:var(--text);font-weight:650}
+
+/* kpi */
+.kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:12px}
+.kpi{background:var(--card);border:1px solid var(--border);border-radius:10px;padding:12px 14px;box-shadow:var(--shadow)}
+.kpi .k-label{font-size:12px;color:var(--muted)}
+.kpi .k-value{font-size:22px;font-weight:680;letter-spacing:-.5px;margin-top:2px}
+.kpi .k-sub{font-size:11px;color:var(--faint)}
+
+/* charts */
+.chart-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(340px,1fr));gap:14px}
+.chart-card h3{font-size:14px;margin-bottom:8px}
+.chart-card.wide{grid-column:1/-1}
+.chart{min-height:120px}
+.legend{display:flex;flex-wrap:wrap;gap:10px;margin-top:8px;font-size:12px;color:var(--muted)}
+.legend i{display:inline-block;width:9px;height:9px;border-radius:2px;margin-right:5px}
+
+/* markdown */
+.md{font-size:13.5px;line-height:1.75;overflow-wrap:break-word}
+.md h1{font-size:19px;margin:18px 0 10px}
+.md h2{font-size:16px;margin:18px 0 8px;padding-bottom:6px;border-bottom:1px solid var(--border-soft)}
+.md h3{font-size:14px;margin:16px 0 6px}
+.md h4{font-size:13px;margin:12px 0 4px}
+.md p{margin:8px 0}
+.md ul,.md ol{margin:8px 0;padding-left:22px}
+.md li{margin:3px 0}
+.md blockquote{margin:10px 0;padding:8px 12px;background:#fafbfc;border-left:3px solid var(--border);color:var(--muted)}
+.md code{background:#f2f4f7;padding:1px 5px;border-radius:4px;font-size:12px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace}
+.md pre{margin:10px 0;padding:12px;background:#f8f9fb;border:1px solid var(--border-soft);border-radius:8px;overflow-x:auto}
+.md pre code{background:none;padding:0}
+.md hr{border:none;border-top:1px solid var(--border-soft);margin:16px 0}
+.table-wrap{overflow-x:auto}
+.md table,.issue-table{border-collapse:collapse;width:100%;font-size:12.5px}
+.md th,.md td,.issue-table th,.issue-table td{border:1px solid var(--border-soft);padding:6px 9px;text-align:left}
+.md th,.issue-table th{background:#fafbfc;font-weight:650;white-space:nowrap}
+.report-card .md{max-height:520px;overflow:auto}
+
+/* issue list */
+.toolbar{display:flex;flex-wrap:wrap;gap:10px;align-items:center;margin-bottom:10px}
+.toolbar input[type=search],.toolbar select{
+  height:34px;padding:0 10px;border:1px solid var(--border);border-radius:8px;font-size:13px;
+  background:#fff;color:var(--text);font-family:inherit;outline:none;
+}
+.toolbar input[type=search]{min-width:220px;flex:1}
+.toolbar input:focus,.toolbar select:focus{border-color:var(--primary)}
+.issue-table td{vertical-align:middle}
+.issue-table tbody tr:hover{background:#fafbfc}
+.issue-table .col-check{width:36px;text-align:center}
+.issue-table input[type=checkbox]{width:15px;height:15px;accent-color:var(--primary);cursor:pointer}
+.num{font-weight:600;color:var(--muted);white-space:nowrap}
+.title-cell{max-width:520px}
+.title-cell a{color:var(--text);font-weight:550}
+.title-cell a:hover{color:var(--primary)}
+.state{font-size:11px;font-weight:650;padding:2px 8px;border-radius:999px;white-space:nowrap}
+.state.open{background:var(--ok-soft);color:var(--ok)}
+.state.closed{background:var(--primary-soft);color:var(--primary)}
+.lab{display:inline-block;font-size:11px;background:#f2f4f7;color:#475467;border-radius:4px;padding:1px 6px;margin:1px 3px 1px 0}
+.empty{padding:24px;text-align:center;color:var(--faint);font-size:13px}
+
+/* action bar */
+.action-bar{
+  position:fixed;left:0;right:0;bottom:0;z-index:60;display:flex;align-items:center;justify-content:space-between;
+  gap:12px;padding:12px 24px;background:rgba(255,255,255,.96);backdrop-filter:blur(8px);
+  border-top:1px solid var(--border);box-shadow:0 -2px 12px rgba(16,24,40,.06);flex-wrap:wrap;
+}
+.action-bar .ab-left{font-size:13px;color:var(--muted)}
+.action-bar .ab-left b{color:var(--primary);font-size:16px}
+.ab-right{display:flex;gap:8px;flex-wrap:wrap}
+
+/* deep */
+.deep-cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:12px;margin-top:14px}
+.deep-item{border:1px solid var(--border);border-radius:10px;padding:12px;background:#fff}
+.deep-item .di-head{display:flex;align-items:flex-start;gap:8px;justify-content:space-between}
+.deep-item .di-title{font-weight:620;font-size:13.5px;line-height:1.5}
+.deep-item .di-title a{color:var(--text)}
+.p-badge{font-size:11px;font-weight:700;padding:2px 8px;border-radius:6px;white-space:nowrap}
+.p0{background:#fee4e2;color:#b42318}
+.p1{background:#fef0c7;color:#b54708}
+.p2{background:#e0eaff;color:#3538cd}
+.p3{background:#f2f4f7;color:#475467}
+.c-badge{font-size:11px;font-weight:600;padding:2px 8px;border-radius:6px;background:var(--border-soft);color:#475467;white-space:nowrap}
+.di-meta{display:flex;flex-wrap:wrap;gap:8px;margin-top:8px;font-size:12px;color:var(--muted)}
+.di-meta span{background:#fafbfc;border:1px solid var(--border-soft);border-radius:6px;padding:1px 7px}
+.di-reasons{margin:8px 0 0;padding-left:18px;font-size:12px;color:var(--muted)}
+.di-reasons li{margin:2px 0}
+.di-kw{margin-top:8px;display:flex;flex-wrap:wrap;gap:5px}
+.di-ai{margin-top:8px;padding:8px 10px;background:var(--primary-soft);border-radius:8px;font-size:12.5px}
+.di-ai b{color:var(--primary)}
+.footnote{text-align:center;color:var(--faint);font-size:12px;padding:24px 0 8px}
+@media (max-width:640px){
+  .hero{padding:32px 0 20px}
+  .hero h1{font-size:24px}
+  .input-row{flex-direction:column}
+  .btn.lg{width:100%}
+  .report-card .md{max-height:none}
+}
+</style>
+</head>
+<body>
+
+<header class="topbar">
+  <div class="brand"><span class="logo">i2f</span> issue2file</div>
+  <div class="topbar-right">
+    <span id="repoTag" class="repo-tag" hidden></span>
+    <button id="btnReset" class="btn ghost sm" hidden>换个仓库</button>
+  </div>
+</header>
+
+<main>
+  <section id="hero" class="hero">
+    <h1>把 GitHub Issue 变成一份能看的报告</h1>
+    <p class="sub">粘贴仓库链接即可拉取全部 issue，自动生成统计报告与图表；勾选任意 issue 后可做进一步的深度分析。</p>
+
+    <form id="fetchForm" class="search-card" autocomplete="off">
+      <div class="input-row">
+        <input id="repoInput" type="text" placeholder="https://github.com/owner/repo 或 owner/repo" spellcheck="false">
+        <button id="btnFetch" class="btn primary lg" type="submit">开始分析</button>
+      </div>
+      <div class="chips">
+        <button type="button" class="chip" data-repo="go-echarts/go-echarts">go-echarts/go-echarts</button>
+        <button type="button" class="chip" data-repo="gin-gonic/gin">gin-gonic/gin</button>
+        <button type="button" class="chip" data-repo="golang/go">golang/go</button>
+      </div>
+      <div class="adv-toggle"><button type="button" id="btnAdv" class="link">高级设置 ▾</button></div>
+      <div id="advPanel" class="adv" hidden>
+        <label class="field">
+          <span>GitHub Token<small>私有仓库必填；仅用于本次请求，不会写入磁盘或日志</small></span>
+          <input id="tokenInput" type="password" placeholder="ghp_xxx / github_pat_xxx" spellcheck="false">
+        </label>
+        <label class="field">
+          <span>AI Token<small>可选，用于生成 AI 洞察；服务端已配置时可留空</small></span>
+          <input id="aiTokenInput" type="password" placeholder="sk-xxx" spellcheck="false">
+        </label>
+        <div class="checks">
+          <label class="check"><input type="checkbox" id="includePR"> 包含 Pull Request</label>
+          <label class="check"><input type="checkbox" id="useAI"> 拉取后调用 AI 生成洞察</label>
+        </div>
+      </div>
+      <div id="tokenHint" class="hint" hidden>服务端已配置 GitHub Token，私有仓库可直接拉取，无需在页面填写。</div>
+    </form>
+
+    <div id="fetchErr" class="alert err" hidden></div>
+    <div id="loading" class="loading" hidden><div class="spinner"></div><span id="loadingText">正在拉取 issue…</span></div>
+  </section>
+
+  <section id="result" hidden>
+    <div id="warnBox" class="alert warn" hidden></div>
+
+    <section>
+      <div class="card repo-card" id="repoCard"></div>
+    </section>
+
+    <section>
+      <div class="kpis" id="kpis"></div>
+    </section>
+
+    <section>
+      <div class="chart-grid">
+        <div class="card chart-card">
+          <h3>状态分布</h3>
+          <div id="chartStatus" class="chart"></div>
+          <div id="legendStatus" class="legend"></div>
+        </div>
+        <div class="card chart-card">
+          <h3>标签 TOP 10</h3>
+          <div id="chartLabels" class="chart"></div>
+        </div>
+        <div class="card chart-card wide">
+          <h3>月度趋势</h3>
+          <div id="chartMonthly" class="chart"></div>
+          <div class="legend">
+            <span><i style="background:#4f46e5"></i>新建</span>
+            <span><i style="background:#10b981"></i>关闭</span>
+            <span><i style="background:#f59e0b"></i>存量</span>
+          </div>
+        </div>
+        <div class="card chart-card">
+          <h3>活跃创建者 TOP 10</h3>
+          <div id="chartCreators" class="chart"></div>
+        </div>
+      </div>
+    </section>
+
+    <section>
+      <div class="card report-card">
+        <div class="card-head">
+          <h3>初步分析报告</h3>
+          <div style="display:flex;gap:8px">
+            <button id="btnCopyReport" class="btn ghost sm">复制</button>
+            <button id="btnDownloadReport" class="btn ghost sm">下载 Markdown</button>
+          </div>
+        </div>
+        <div id="reportBody" class="md"></div>
+        <div id="aiBox" hidden style="margin-top:18px">
+          <h4 style="font-size:14px;margin-bottom:8px">AI 洞察</h4>
+          <div id="aiBody" class="md"></div>
+        </div>
+      </div>
+    </section>
+
+    <section>
+      <div class="card">
+        <div class="card-head">
+          <h3>Issue 列表</h3>
+          <span id="listCount" class="muted"></span>
+        </div>
+        <div class="toolbar">
+          <input id="searchInput" type="search" placeholder="搜索标题 / 编号 / 作者 / 标签">
+          <select id="stateFilter">
+            <option value="">全部状态</option>
+            <option value="open">未关闭</option>
+            <option value="closed">已关闭</option>
+          </select>
+          <select id="sortSelect">
+            <option value="number-desc">编号 从新到旧</option>
+            <option value="number-asc">编号 从旧到新</option>
+            <option value="created-desc">创建时间 最新</option>
+            <option value="created-asc">创建时间 最早</option>
+            <option value="days-desc">存活 / 耗时 最长</option>
+            <option value="comments-desc">评论最多</option>
+          </select>
+          <label class="check"><input type="checkbox" id="selAll"> 全选（当前筛选结果）</label>
+        </div>
+        <div class="table-wrap">
+          <table class="issue-table">
+            <thead>
+              <tr>
+                <th class="col-check"></th>
+                <th>#</th><th>标题</th><th>状态</th><th>作者</th><th>标签</th><th>评论</th><th>天数</th><th>创建于</th>
+              </tr>
+            </thead>
+            <tbody id="tbody"></tbody>
+          </table>
+        </div>
+        <div id="emptyList" class="empty" hidden>没有匹配的 issue</div>
+      </div>
+    </section>
+  </section>
+
+  <section id="deepSection" hidden>
+    <div class="card">
+      <div class="card-head">
+        <h3>深度分析结果</h3>
+        <span id="deepMeta" class="muted"></span>
+      </div>
+      <div id="deepWarn" class="alert warn" hidden style="margin:0 0 12px"></div>
+      <div class="chart-grid">
+        <div class="card chart-card">
+          <h3>问题分类</h3>
+          <div id="chartCategory" class="chart"></div>
+          <div id="legendCategory" class="legend"></div>
+        </div>
+        <div class="card chart-card">
+          <h3>优先级分布</h3>
+          <div id="chartPriority" class="chart"></div>
+        </div>
+        <div class="card chart-card">
+          <h3>高频关键词</h3>
+          <div id="chartKeywords" class="chart"></div>
+        </div>
+        <div class="card chart-card">
+          <h3>处理耗时分布</h3>
+          <div id="chartAge" class="chart"></div>
+        </div>
+      </div>
+      <div id="deepReport" class="md" style="margin-top:16px"></div>
+      <div id="deepCards" class="deep-cards"></div>
+      <div style="margin-top:14px;display:flex;gap:8px;flex-wrap:wrap">
+        <button id="btnDownloadDeep" class="btn ghost">下载深度分析报告</button>
+      </div>
+    </div>
+  </section>
+
+  <div class="footnote">issue2file · 数据来自 GitHub REST API v3 · Token 仅保存在本次进程内存中</div>
+</main>
+
+<div id="actionBar" class="action-bar" hidden>
+  <div class="ab-left">已选 <b id="selCount">0</b> 个 issue<span id="selHint" class="muted" style="margin-left:8px"></span></div>
+  <div class="ab-right">
+    <button id="btnClearSel" class="btn ghost">清空选择</button>
+    <button id="btnExportSel" class="btn ghost">导出选中 Markdown</button>
+    <button id="btnExportAll" class="btn ghost">导出全部 Markdown</button>
+    <button id="btnDeep" class="btn primary">深度分析选中项</button>
+  </div>
+</div>
+
+<script>
+"use strict";
+
+/* ---------------- 基础工具 ---------------- */
+const PALETTE = ['#4f46e5','#0ea5e9','#10b981','#f59e0b','#ef4444','#8b5cf6','#14b8a6','#ec4899','#84cc16','#f97316'];
+const $ = (id) => document.getElementById(id);
+
+function esc(s){
+  return String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({
+    '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'
+  }[c]));
+}
+function num(v){ return typeof v === 'number' && isFinite(v) ? v : 0; }
+function fmtDay(p){ return p == null ? '—' : p + ' 天'; }
+
+/* ---------------- 极简 Markdown 渲染 ---------------- */
+function inlineMd(s){
+  let t = s;
+  t = t.replace(/`([^`]+)`/g, (m, c) => '<code>' + c + '</code>');
+  t = t.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
+  t = t.replace(/(^|[^*])\*([^*\n]+)\*/g, '$1<em>$2</em>');
+  t = t.replace(/\[([^\]]+)\]\((https?:\/\/[^)\s]+)\)/g,
+      (m, txt, url) => '<a href="' + url + '" target="_blank" rel="noopener">' + txt + '</a>');
+  return t;
+}
+function splitRow(line){
+  return line.trim().replace(/^\|/, '').replace(/\|$/, '').split('|').map((s) => s.trim());
+}
+function renderTable(head, rows){
+  let h = '<div class="table-wrap"><table><thead><tr>';
+  head.forEach((c) => { h += '<th>' + inlineMd(c) + '</th>'; });
+  h += '</tr></thead><tbody>';
+  rows.forEach((r) => {
+    h += '<tr>';
+    r.forEach((c) => { h += '<td>' + inlineMd(c) + '</td>'; });
+    h += '</tr>';
+  });
+  return h + '</tbody></table></div>';
+}
+function isBlockStart(line){
+  return /^#{1,6}\s/.test(line) || /^\s*[-*+]\s+/.test(line) || /^\s*\d+[.)]\s+/.test(line)
+      || /^(-{3,}|\*{3,})$/.test(line.trim()) || /^&gt;\s?/.test(line)
+      || /^\u0000F\d+\u0000$/.test(line.trim());
+}
+function mdToHtml(src){
+  if (!src) return '';
+  let text = esc(src);
+  const fences = [];
+  text = text.replace(/```[a-zA-Z0-9]*\n([\s\S]*?)```/g, (m, code) => {
+    fences.push('<pre><code>' + code.replace(/\n$/, '') + '</code></pre>');
+    return '\u0000F' + (fences.length - 1) + '\u0000';
+  });
+
+  const lines = text.split('\n');
+  const out = [];
+  let i = 0;
+  while (i < lines.length) {
+    const line = lines[i];
+    if (!line.trim()) { i++; continue; }
+
+    if (/^\u0000F\d+\u0000$/.test(line.trim())) { out.push(line.trim()); i++; continue; }
+
+    const hm = line.match(/^(#{1,6})\s+(.*)$/);
+    if (hm) { out.push('<h' + hm[1].length + '>' + inlineMd(hm[2]) + '</h' + hm[1].length + '>'); i++; continue; }
+
+    if (/^(-{3,}|\*{3,})$/.test(line.trim())) { out.push('<hr/>'); i++; continue; }
+
+    if (/^&gt;\s?/.test(line)) { out.push('<blockquote>' + inlineMd(line.replace(/^&gt;\s?/, '')) + '</blockquote>'); i++; continue; }
+
+    if (line.indexOf('|') >= 0 && i + 1 < lines.length && /^\s*\|?[\s:|-]+\|[\s:|-]*$/.test(lines[i + 1])) {
+      const head = splitRow(line);
+      i += 2;
+      const rows = [];
+      while (i < lines.length && lines[i].indexOf('|') >= 0 && lines[i].trim() !== '') { rows.push(splitRow(lines[i])); i++; }
+      out.push(renderTable(head, rows));
+      continue;
+    }
+
+    if (/^\s*[-*+]\s+/.test(line)) {
+      const items = [];
+      while (i < lines.length && /^\s*[-*+]\s+/.test(lines[i])) { items.push(inlineMd(lines[i].replace(/^\s*[-*+]\s+/, ''))); i++; }
+      out.push('<ul>' + items.map((x) => '<li>' + x + '</li>').join('') + '</ul>');
+      continue;
+    }
+
+    if (/^\s*\d+[.)]\s+/.test(line)) {
+      const items = [];
+      while (i < lines.length && /^\s*\d+[.)]\s+/.test(lines[i])) { items.push(inlineMd(lines[i].replace(/^\s*\d+[.)]\s+/, ''))); i++; }
+      out.push('<ol>' + items.map((x) => '<li>' + x + '</li>').join('') + '</ol>');
+      continue;
+    }
+
+    const buf = [];
+    while (i < lines.length && lines[i].trim() !== '' && !isBlockStart(lines[i])) { buf.push(lines[i]); i++; }
+    if (buf.length === 0) { buf.push(lines[i]); i++; }
+    out.push('<p>' + inlineMd(buf.join(' ')) + '</p>');
+  }
+
+  return out.join('\n').replace(/\u0000F(\d+)\u0000/g, (m, d) => fences[Number(d)] || '');
+}
+
+/* ---------------- SVG 图表 ---------------- */
+function emptySVG(text){
+  return '<svg viewBox="0 0 560 120" width="100%" height="120" role="img">'
+    + '<text x="280" y="64" text-anchor="middle" font-size="13" fill="#98a2b3">' + esc(text) + '</text></svg>';
+}
+function donutSVG(items){
+  if (!items || !items.length) return emptySVG('暂无数据');
+  const total = items.reduce((a, b) => a + num(b.value), 0);
+  if (total <= 0) return emptySVG('暂无数据');
+  const S = 200, C = S / 2, R = S / 2 - 14, SW = 26;
+  const circ = 2 * Math.PI * R;
+  let off = 0, segs = '';
+  items.forEach((it, idx) => {
+    const len = circ * (num(it.value) / total);
+    segs += '<circle cx="' + C + '" cy="' + C + '" r="' + R + '" fill="none" stroke="' + PALETTE[idx % PALETTE.length]
+      + '" stroke-width="' + SW + '" stroke-dasharray="' + len.toFixed(2) + ' ' + (circ - len).toFixed(2)
+      + '" stroke-dashoffset="' + (-off).toFixed(2) + '" transform="rotate(-90 ' + C + ' ' + C + ')">'
+      + '<title>' + esc(it.name) + ': ' + it.value + '</title></circle>';
+    off += len;
+  });
+  return '<svg viewBox="0 0 ' + S + ' ' + S + '" width="100%" height="' + S + '" role="img" style="max-width:200px;margin:0 auto;display:block">'
+    + segs
+    + '<text x="' + C + '" y="' + (C - 2) + '" text-anchor="middle" font-size="22" font-weight="700" fill="#15181d">' + total + '</text>'
+    + '<text x="' + C + '" y="' + (C + 16) + '" text-anchor="middle" font-size="11" fill="#667085">总数</text></svg>';
+}
+function legendHTML(items){
+  if (!items || !items.length) return '';
+  return items.map((it, i) =>
+    '<span><i style="background:' + PALETTE[i % PALETTE.length] + '"></i>' + esc(it.name) + ' ' + it.value + '</span>').join('');
+}
+function barsSVG(items, fixedColor){
+  if (!items || !items.length) return emptySVG('暂无数据');
+  const W = 560, rowH = 28, padL = 116, padR = 46, padT = 6;
+  const H = padT + items.length * rowH + 6;
+  let max = 1;
+  items.forEach((it) => { if (num(it.value) > max) max = num(it.value); });
+  let s = '<svg viewBox="0 0 ' + W + ' ' + H + '" width="100%" height="' + H + '" role="img">';
+  items.forEach((it, i) => {
+    const y = padT + i * rowH;
+    const bw = Math.max(2, (W - padL - padR) * (num(it.value) / max));
+    const name = String(it.name);
+    const label = name.length > 14 ? name.slice(0, 14) + '…' : name;
+    s += '<text x="' + (padL - 8) + '" y="' + (y + rowH / 2 + 4) + '" text-anchor="end" font-size="12" fill="#475467">' + esc(label) + '</text>';
+    s += '<rect x="' + padL + '" y="' + (y + 6) + '" width="' + bw.toFixed(1) + '" height="' + (rowH - 13) + '" rx="3" fill="'
+      + (fixedColor || PALETTE[i % PALETTE.length]) + '"><title>' + esc(name) + ': ' + it.value + '</title></rect>';
+    s += '<text x="' + (padL + bw + 6) + '" y="' + (y + rowH / 2 + 4) + '" font-size="12" fill="#15181d">' + it.value + '</text>';
+  });
+  return s + '</svg>';
+}
+function lineSVG(points){
+  if (!points || !points.length) return emptySVG('暂无数据');
+  const W = 900, H = 280, padL = 42, padR = 16, padT = 16, padB = 36;
+  const n = points.length;
+  let maxV = 1;
+  points.forEach((p) => {
+    maxV = Math.max(maxV, num(p.created), num(p.closed), num(p.backlog));
+  });
+  const x = (i) => padL + (W - padL - padR) * (n === 1 ? 0.5 : i / (n - 1));
+  const y = (v) => padT + (H - padT - padB) * (1 - v / maxV);
+  let s = '<svg viewBox="0 0 ' + W + ' ' + H + '" width="100%" height="' + H + '" role="img">';
+  for (let g = 0; g <= 4; g++) {
+    const v = maxV * g / 4, yy = y(v);
+    s += '<line x1="' + padL + '" y1="' + yy.toFixed(1) + '" x2="' + (W - padR) + '" y2="' + yy.toFixed(1) + '" stroke="#eef0f3" stroke-width="1"/>';
+    s += '<text x="' + (padL - 6) + '" y="' + (yy + 4).toFixed(1) + '" text-anchor="end" font-size="10" fill="#98a2b3">' + Math.round(v) + '</text>';
+  }
+  const series = [['created', '#4f46e5'], ['closed', '#10b981'], ['backlog', '#f59e0b']];
+  series.forEach((pair) => {
+    let d = '';
+    points.forEach((p, i) => {
+      d += (i === 0 ? 'M' : 'L') + x(i).toFixed(1) + ',' + y(num(p[pair[0]])).toFixed(1) + ' ';
+    });
+    s += '<path d="' + d.trim() + '" fill="none" stroke="' + pair[1] + '" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>';
+  });
+  if (n <= 30) {
+    points.forEach((p, i) => {
+      s += '<circle cx="' + x(i).toFixed(1) + '" cy="' + y(num(p.created)).toFixed(1) + '" r="2.6" fill="#4f46e5"/>';
+    });
+  }
+  const step = Math.max(1, Math.ceil(n / 12));
+  points.forEach((p, i) => {
+    if (i % step === 0 || i === n - 1) {
+      s += '<text x="' + x(i).toFixed(1) + '" y="' + (H - padB + 18) + '" text-anchor="middle" font-size="10" fill="#98a2b3">' + esc(p.month) + '</text>';
+    }
+  });
+  return s + '</svg>';
+}
+
+/* ---------------- 应用状态 ---------------- */
+const state = {
+  sessionId: '',
+  owner: '',
+  repo: '',
+  issues: [],
+  data: null,
+  report: '',
+  aiInsight: '',
+  selected: new Set(),
+  deepReport: '',
+  deepItems: []
+};
+
+async function api(path, body){
+  let res;
+  try {
+    res = await fetch(path, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body || {})
+    });
+  } catch (e) {
+    throw new Error('无法连接本地服务，请确认 issue2file 进程仍在运行');
+  }
+  const text = await res.text();
+  let data = null;
+  try { data = JSON.parse(text); } catch (e) { data = null; }
+  if (!res.ok) {
+    const msg = (data && data.error) ? data.error : ('请求失败（HTTP ' + res.status + '）');
+    throw new Error(msg);
+  }
+  return data;
+}
+
+function showErr(el, msg){ el.textContent = msg; el.hidden = false; }
+function hideErr(el){ el.textContent = ''; el.hidden = true; }
+function setLoading(on, text){
+  $('loading').hidden = !on;
+  if (text) $('loadingText').textContent = text;
+  $('btnFetch').disabled = on;
+}
+
+/* ---------------- 拉取仓库 ---------------- */
+async function onFetch(e){
+  if (e) e.preventDefault();
+  hideErr($('fetchErr'));
+  const repo = $('repoInput').value.trim();
+  if (!repo) { showErr($('fetchErr'), '请先填写仓库地址，例如 https://github.com/owner/repo'); return; }
+
+  setLoading(true, '正在拉取 issue（issue 较多时可能需要十几秒）…');
+  try {
+    const data = await api('/api/fetch', {
+      repo: repo,
+      token: $('tokenInput').value.trim(),
+      aiToken: $('aiTokenInput').value.trim(),
+      includePR: $('includePR').checked,
+      useAI: $('useAI').checked
+    });
+    state.sessionId = data.sessionId || '';
+    state.owner = data.data && data.data.meta ? data.data.meta.owner : '';
+    state.repo = data.data && data.data.meta ? data.data.meta.repo : '';
+    state.data = data.data;
+    state.issues = (data.data && data.data.issues) ? data.data.issues : [];
+    state.report = data.report || '';
+    state.aiInsight = data.aiInsight || '';
+    state.selected = new Set();
+    state.deepReport = '';
+    state.deepItems = [];
+
+    renderWarnings(data.warnings);
+    renderRepo(data.repo);
+    renderKpis(data.data);
+    renderCharts(data.data);
+    renderReport();
+    renderList();
+
+    $('hero').classList.add('compact');
+    $('result').hidden = false;
+    $('deepSection').hidden = true;
+    $('actionBar').hidden = state.issues.length === 0;
+    document.body.classList.toggle('has-bar', state.issues.length > 0);
+    $('btnReset').hidden = false;
+    $('repoTag').hidden = false;
+    $('repoTag').textContent = (data.repo && data.repo.fullName) || (state.owner + '/' + state.repo);
+    updateSel();
+    if (state.issues.length === 0) {
+      showErr($('fetchErr'), '该仓库没有拉取到任何 issue（可能未开启 issues 或权限不足）。');
+    }
+  } catch (err) {
+    showErr($('fetchErr'), err.message || String(err));
+  } finally {
+    setLoading(false);
+  }
+}
+
+function renderWarnings(warnings){
+  const box = $('warnBox');
+  if (!warnings || !warnings.length) { box.hidden = true; box.textContent = ''; return; }
+  box.textContent = warnings.join('\n');
+  box.hidden = false;
+}
+
+function renderRepo(r){
+  if (!r) { $('repoCard').innerHTML = ''; return; }
+  const badges = [];
+  if (r.private) badges.push('<span class="badge private">私有仓库</span>');
+  if (r.archived) badges.push('<span class="badge archived">已归档</span>');
+  if (r.fork) badges.push('<span class="badge">Fork</span>');
+  if (r.language) badges.push('<span class="badge">' + esc(r.language) + '</span>');
+  if (r.license) badges.push('<span class="badge">' + esc(r.license) + '</span>');
+
+  const topics = (r.topics || []).slice(0, 6)
+    .map((t) => '<span class="lab">' + esc(t) + '</span>').join('');
+
+  $('repoCard').innerHTML =
+    '<div class="repo-main">'
+    + '<div class="repo-title"><a href="' + esc(r.url || '#') + '" target="_blank" rel="noopener">' + esc(r.fullName) + '</a>'
+    + badges.join('') + '</div>'
+    + (r.description ? '<div class="repo-desc">' + esc(r.description) + '</div>' : '')
+    + (topics ? '<div style="margin-top:8px">' + topics + '</div>' : '')
+    + '</div>'
+    + '<div class="repo-stats">'
+    + '<div>Star<b>' + num(r.stars) + '</b></div>'
+    + '<div>Fork<b>' + num(r.forks) + '</b></div>'
+    + '<div>关注<b>' + num(r.watchers) + '</b></div>'
+    + '<div>开放 issue<b>' + num(r.openIssues) + '</b></div>'
+    + '<div>创建于<b>' + esc(r.createdAt || '—') + '</b></div>'
+    + '<div>更新于<b>' + esc(r.updatedAt || '—') + '</b></div>'
+    + '</div>';
+}
+
+function renderKpis(d){
+  if (!d || !d.summary) { $('kpis').innerHTML = ''; return; }
+  const s = d.summary;
+  const cards = [
+    ['issue 总数', s.total, '含已关闭'],
+    ['未关闭', s.open, '占比 ' + s.openRate + '%'],
+    ['已关闭', s.closed, '关闭率 ' + s.closeRate + '%'],
+    ['平均关闭耗时', s.closeDays == null ? '—' : s.closeDays + ' 天', '已关闭 issue'],
+    ['未关闭平均存活', s.openAgeDays == null ? '—' : s.openAgeDays + ' 天', '越久越需清理'],
+    ['参与人数', s.contributors, '不同创建者'],
+    ['标签种类', s.labelCount, '用于分类统计']
+  ];
+  $('kpis').innerHTML = cards.map((c) =>
+    '<div class="kpi"><div class="k-label">' + esc(c[0]) + '</div>'
+    + '<div class="k-value">' + esc(String(c[1])) + '</div>'
+    + '<div class="k-sub">' + esc(c[2]) + '</div></div>').join('');
+}
+
+function renderCharts(d){
+  if (!d) return;
+  $('chartStatus').innerHTML = donutSVG(d.statusDist);
+  $('legendStatus').innerHTML = legendHTML(d.statusDist);
+  $('chartLabels').innerHTML = barsSVG(d.labelDist, '#4f46e5');
+  $('chartCreators').innerHTML = barsSVG(d.creators, '#0ea5e9');
+  $('chartMonthly').innerHTML = lineSVG(d.monthly);
+}
+
+function renderReport(){
+  $('reportBody').innerHTML = mdToHtml(state.report);
+  if (state.aiInsight) {
+    $('aiBox').hidden = false;
+    $('aiBody').innerHTML = mdToHtml(state.aiInsight);
+  } else {
+    $('aiBox').hidden = true;
+    $('aiBody').innerHTML = '';
+  }
+}
+
+/* ---------------- issue 列表 ---------------- */
+function visibleIssues(){
+  const kw = $('searchInput').value.trim().toLowerCase();
+  const st = $('stateFilter').value;
+  const sort = $('sortSelect').value;
+  let list = state.issues.filter((it) => {
+    if (st && it.state !== st) return false;
+    if (!kw) return true;
+    const hay = ('#' + it.number + ' ' + it.title + ' ' + it.author + ' ' + (it.labels || []).join(' ')).toLowerCase();
+    return hay.indexOf(kw) >= 0;
+  });
+  const cmp = {
+    'number-desc': (a, b) => b.number - a.number,
+    'number-asc': (a, b) => a.number - b.number,
+    'created-desc': (a, b) => (a.createdAt < b.createdAt ? 1 : a.createdAt > b.createdAt ? -1 : 0),
+    'created-asc': (a, b) => (a.createdAt > b.createdAt ? 1 : a.createdAt < b.createdAt ? -1 : 0),
+    'days-desc': (a, b) => (b.days || 0) - (a.days || 0),
+    'comments-desc': (a, b) => b.comments - a.comments
+  }[sort] || ((a, b) => b.number - a.number);
+  return list.slice().sort(cmp);
+}
+
+function renderList(){
+  const list = visibleIssues();
+  const tb = $('tbody');
+  if (!list.length) {
+    tb.innerHTML = '';
+    $('emptyList').hidden = false;
+  } else {
+    $('emptyList').hidden = true;
+    tb.innerHTML = list.map((it) => {
+      const checked = state.selected.has(it.number) ? ' checked' : '';
+      const labels = (it.labels || []).map((l) => '<span class="lab">' + esc(l) + '</span>').join('');
+      return '<tr data-num="' + it.number + '">'
+        + '<td class="col-check"><input type="checkbox" data-num="' + it.number + '"' + checked + '></td>'
+        + '<td class="num">#' + it.number + '</td>'
+        + '<td class="title-cell"><a href="' + esc(it.url) + '" target="_blank" rel="noopener">' + esc(it.title) + '</a></td>'
+        + '<td><span class="state ' + esc(it.state) + '">' + (it.state === 'open' ? '未关闭' : '已关闭') + '</span></td>'
+        + '<td>' + esc(it.author || '—') + '</td>'
+        + '<td>' + (labels || '<span class="muted">—</span>') + '</td>'
+        + '<td>' + it.comments + '</td>'
+        + '<td>' + (it.days == null ? '—' : it.days) + '</td>'
+        + '<td>' + esc(it.createdAt) + '</td>'
+        + '</tr>';
+    }).join('');
+  }
+  $('listCount').textContent = '共 ' + state.issues.length + ' 个 issue，当前显示 ' + list.length + ' 个';
+  syncSelAll(list);
+}
+
+function syncSelAll(list){
+  const box = $('selAll');
+  if (!list.length) { box.checked = false; box.indeterminate = false; return; }
+  let n = 0;
+  list.forEach((it) => { if (state.selected.has(it.number)) n++; });
+  box.checked = n === list.length;
+  box.indeterminate = n > 0 && n < list.length;
+}
+
+function toggleOne(number, on){
+  if (on) state.selected.add(number); else state.selected.delete(number);
+  updateSel();
+}
+
+function updateSel(){
+  $('selCount').textContent = state.selected.size;
+  const btn = $('btnDeep');
+  btn.disabled = state.selected.size === 0;
+  $('btnExportSel').disabled = state.selected.size === 0;
+  const hint = $('selHint');
+  hint.textContent = state.selected.size === 0 ? '（勾选下方列表中的 issue）' : '';
+}
+
+/* ---------------- 深度分析 ---------------- */
+async function onDeep(){
+  if (!state.selected.size) return;
+  const btn = $('btnDeep');
+  btn.disabled = true;
+  const old = btn.textContent;
+  btn.textContent = '分析中…';
+  try {
+    const data = await api('/api/analyze', {
+      sessionId: state.sessionId,
+      numbers: Array.from(state.selected),
+      withComments: true,
+      aiToken: $('aiTokenInput').value.trim(),
+      useAI: $('useAI').checked
+    });
+    state.deepReport = data.report || '';
+    state.deepItems = data.items || [];
+    renderDeep(data);
+    $('deepSection').hidden = false;
+    $('deepSection').scrollIntoView({ behavior: 'smooth', block: 'start' });
+  } catch (err) {
+    showErr($('fetchErr'), err.message || String(err));
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  } finally {
+    btn.textContent = old;
+    updateSel();
+  }
+}
+
+function renderDeep(d){
+  const warn = $('deepWarn');
+  if (d.warnings && d.warnings.length) { warn.textContent = d.warnings.join('\n'); warn.hidden = false; }
+  else { warn.textContent = ''; warn.hidden = true; }
+
+  $('chartCategory').innerHTML = donutSVG(d.categoryDist);
+  $('legendCategory').innerHTML = legendHTML(d.categoryDist);
+  $('chartPriority').innerHTML = barsSVG(d.priorityDist, '#ef4444');
+  $('chartKeywords').innerHTML = barsSVG(d.keywordDist, '#8b5cf6');
+  $('chartAge').innerHTML = barsSVG(d.ageDist, '#0ea5e9');
+  $('deepReport').innerHTML = mdToHtml(d.report);
+  $('deepMeta').textContent = '共分析 ' + d.count + ' 个 issue'
+    + (d.aiUsed ? ' · 已包含 AI 洞察' : ' · 本地规则引擎');
+
+  $('deepCards').innerHTML = (d.items || []).map((it) => {
+    const kw = (it.keywords || []).map((k) => '<span class="lab">' + esc(k) + '</span>').join('');
+    const reasons = (it.reasons || []).map((r) => '<li>' + esc(r) + '</li>').join('');
+    return '<div class="deep-item">'
+      + '<div class="di-head">'
+      + '<div class="di-title"><a href="' + esc(it.url) + '" target="_blank" rel="noopener">#' + it.number + ' ' + esc(it.title) + '</a></div>'
+      + '<div style="display:flex;gap:6px;flex-shrink:0">'
+      + '<span class="p-badge ' + esc(String(it.priority).toLowerCase()) + '">' + esc(it.priority) + '</span>'
+      + '<span class="c-badge">' + esc(it.category) + '</span></div>'
+      + '</div>'
+      + '<div class="di-meta">'
+      + '<span>' + (it.state === 'open' ? '未关闭 · 存活 ' : '已关闭 · 耗时 ') + it.days + ' 天</span>'
+      + '<span>评论 ' + it.comments + '</span>'
+      + '<span>参与 ' + it.participants + ' 人</span>'
+      + '<span>正文约 ' + it.words + ' 字</span>'
+      + (it.hasStack ? '<span>含堆栈</span>' : '')
+      + '<span>评分 ' + it.score + '</span>'
+      + '</div>'
+      + '<ul class="di-reasons">' + reasons + '</ul>'
+      + (kw ? '<div class="di-kw">' + kw + '</div>' : '')
+      + (it.aiInsight ? '<div class="di-ai"><b>AI：</b>' + esc(it.aiInsight) + '</div>' : '')
+      + '</div>';
+  }).join('');
+}
+
+/* ---------------- 导出 ---------------- */
+async function doExport(numbers, report){
+  try {
+    const data = await api('/api/export', {
+      sessionId: state.sessionId,
+      numbers: numbers,
+      withComments: false,
+      report: report || ''
+    });
+    download(data.filename || 'issues.md', data.content || '');
+  } catch (err) {
+    showErr($('fetchErr'), err.message || String(err));
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  }
+}
+function download(filename, text){
+  const blob = new Blob([text], { type: 'text/markdown;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = filename;
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1500);
+}
+async function copyText(text){
+  try {
+    await navigator.clipboard.writeText(text);
+    return true;
+  } catch (e) {
+    return false;
+  }
+}
+
+/* ---------------- 事件绑定 ---------------- */
+$('fetchForm').addEventListener('submit', onFetch);
+$('btnAdv').addEventListener('click', () => {
+  const p = $('advPanel');
+  p.hidden = !p.hidden;
+  $('btnAdv').textContent = p.hidden ? '高级设置 ▾' : '高级设置 ▴';
+});
+document.querySelectorAll('.chip').forEach((c) => {
+  c.addEventListener('click', () => { $('repoInput').value = c.getAttribute('data-repo'); $('repoInput').focus(); });
+});
+$('tbody').addEventListener('change', (e) => {
+  const cb = e.target;
+  if (!cb || cb.type !== 'checkbox') return;
+  const n = Number(cb.getAttribute('data-num'));
+  if (!isFinite(n)) return;
+  toggleOne(n, cb.checked);
+  syncSelAll(visibleIssues());
+});
+$('selAll').addEventListener('change', (e) => {
+  const on = e.target.checked;
+  visibleIssues().forEach((it) => {
+    if (on) state.selected.add(it.number); else state.selected.delete(it.number);
+  });
+  renderList();
+  updateSel();
+});
+$('btnClearSel').addEventListener('click', () => {
+  state.selected.clear();
+  renderList();
+  updateSel();
+});
+$('searchInput').addEventListener('input', renderList);
+$('stateFilter').addEventListener('change', renderList);
+$('sortSelect').addEventListener('change', renderList);
+$('btnDeep').addEventListener('click', onDeep);
+$('btnExportSel').addEventListener('click', () => doExport(Array.from(state.selected), state.deepReport));
+$('btnExportAll').addEventListener('click', () => doExport([], state.report));
+$('btnDownloadReport').addEventListener('click', () => {
+  const name = 'issues_report_' + (state.owner || 'repo') + '_' + (state.repo || 'export') + '.md';
+  download(name, state.report);
+});
+$('btnDownloadDeep').addEventListener('click', () => {
+  download('issues_deep_' + (state.owner || 'repo') + '_' + (state.repo || 'export') + '.md', state.deepReport);
+});
+$('btnCopyReport').addEventListener('click', async () => {
+  const btn = $('btnCopyReport');
+  const ok = await copyText(state.report);
+  btn.textContent = ok ? '已复制' : '复制失败';
+  setTimeout(() => { btn.textContent = '复制'; }, 1600);
+});
+$('btnReset').addEventListener('click', () => {
+  $('result').hidden = true;
+  $('deepSection').hidden = true;
+  $('actionBar').hidden = true;
+  document.body.classList.remove('has-bar');
+  $('btnReset').hidden = true;
+  $('repoTag').hidden = true;
+  $('hero').classList.remove('compact');
+  hideErr($('fetchErr'));
+  state.selected.clear();
+  window.scrollTo({ top: 0, behavior: 'smooth' });
+});
+
+/* 首屏：读取服务端是否已配置 Token，给出对应提示 */
+fetch('/api/config').then((r) => r.json()).then((c) => {
+  if (c && c.hasGitHubToken) $('tokenHint').hidden = false;
+  if (c && c.hasAIToken) {
+    $('useAI').checked = true;
+  }
+}).catch(() => {});
+</script>
+</body>
+</html>
