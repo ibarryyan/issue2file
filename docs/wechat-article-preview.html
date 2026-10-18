@@ -1,0 +1,198 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>issue2file 公众号文章预览</title>
+</head>
+<body style="margin:0;padding:0;background:#ededed;">
+  <div style="max-width:677px;margin:0 auto;padding:30px 20px;background:#ffffff;">
+    <div style="margin-bottom:24px;padding:12px 16px;background:#fff8e6;border:1px dashed #f0c36d;font-size:13px;color:#8a6d3b;line-height:1.7;border-radius:4px;">
+      预览模式：这是排版后的效果。发布时请直接复制下方正文区域（不含此提示框）粘贴到公众号编辑器，样式会被保留。
+    </div>
+    <h1 style="margin:0 0 26px 0;font-size:22px;line-height:1.5;font-weight:700;color:#1a1a1a;text-align:center;letter-spacing:1px;">仓库几百条 Issue 读不完？把它一次性搬回本地</h1>
+<blockquote style="margin:0 0 20px 0;padding:12px 14px;background:#f7f9f8;border-left:3px solid #07c160;color:#3f3f3f;">
+<p style="margin:0 0 18px 0;font-size:15px;line-height:1.85;color:#3f3f3f;letter-spacing:0.4px;">备选标题：
+① issue2file：把 GitHub Issue 变成本地文档，再交给 AI 读
+② 别再翻网页了：一条命令导完整个仓库的 Issue</p>
+</blockquote>
+<hr style="margin:30px 0;border:none;border-top:1px solid #e5e5e5;" />
+<h2 style="margin:34px 0 16px 0;font-size:18px;line-height:1.5;font-weight:700;color:#1a1a1a;border-left:4px solid #07c160;padding-left:10px;">一、先说问题</h2>
+<p style="margin:0 0 18px 0;font-size:15px;line-height:1.85;color:#3f3f3f;letter-spacing:0.4px;">假设你现在要做这几件事里的任意一件：给手里的开源项目写一份年度回顾、把仓库交接给下一位维护者、看看过去半年用户到底在反馈什么、或者单纯想把这个仓库的所有 Issue 丢给大模型，让它帮你总结。</p>
+<p style="margin:0 0 18px 0;font-size:15px;line-height:1.85;color:#3f3f3f;letter-spacing:0.4px;">你打开 GitHub 的 Issue 页面，会遇到三重麻烦：</p>
+<ul style="margin:0 0 18px 0;padding-left:0;list-style:none;">
+<li style="margin:0 0 8px 0;font-size:15px;line-height:1.85;color:#3f3f3f;" style="margin:0 0 8px 0;font-size:15px;line-height:1.85;color:#3f3f3f;"><strong style="color:#07c160;font-weight:600;">一次性看不到全貌</strong>：网页是分页浏览式的， Popular 仓库动辄几百上千条，往前翻三页你就已经忘了第一页在说什么。</li>
+<li style="margin:0 0 8px 0;font-size:15px;line-height:1.85;color:#3f3f3f;" style="margin:0 0 8px 0;font-size:15px;line-height:1.85;color:#3f3f3f;"><strong style="color:#07c160;font-weight:600;">没法离线、没法批量处理</strong>：Issue 活在 GitHub 的页面里，你没法 <code style="background:#f2f4f5;color:#c7254e;padding:2px 5px;border-radius:3px;font-size:13px;">grep</code>，没法全文检索，也没法把它当成数据去做统计。</li>
+<li style="margin:0 0 8px 0;font-size:15px;line-height:1.85;color:#3f3f3f;" style="margin:0 0 8px 0;font-size:15px;line-height:1.85;color:#3f3f3f;"><strong style="color:#07c160;font-weight:600;">没法直接喂给 AI</strong>：你得一条条复制粘贴，或者临时写脚本调 API —— 而这件事每次要用的时候都要重写一遍。</li>
+</ul>
+<p style="margin:0 0 18px 0;font-size:15px;line-height:1.85;color:#3f3f3f;letter-spacing:0.4px;">GitHub 自己的搜索语法很强，但它解决的是「找」，不是「拿」。中间缺了一步：<strong style="color:#07c160;font-weight:600;">把散落在网页上的 Issue，变成你硬盘上的一组文件。</strong></p>
+<p style="margin:0 0 18px 0;font-size:15px;line-height:1.85;color:#3f3f3f;letter-spacing:0.4px;">issue2file 做的就是这一步，顺手把后面两步也做了。</p>
+<blockquote style="margin:0 0 20px 0;padding:12px 14px;background:#f7f9f8;border-left:3px solid #07c160;color:#3f3f3f;">
+<p style="margin:0 0 18px 0;font-size:15px;line-height:1.85;color:#3f3f3f;letter-spacing:0.4px;"><strong style="color:#07c160;font-weight:600;">一句话</strong>：issue2file 把一个 GitHub 仓库的全部 Issue（含 PR 和评论）拉成本地 Markdown 文件，然后基于这份确定的本地数据，做 AI 总结和可视化图表。它是一个 Go 写的单文件可以编译成二进制的命令行工具，没有服务端、没有数据库、不需要登录。</p>
+</blockquote>
+<hr style="margin:30px 0;border:none;border-top:1px solid #e5e5e5;" />
+<h2 style="margin:34px 0 16px 0;font-size:18px;line-height:1.5;font-weight:700;color:#1a1a1a;border-left:4px solid #07c160;padding-left:10px;">二、30 秒跑出第一个结果</h2>
+<p style="margin:0 0 18px 0;font-size:15px;line-height:1.85;color:#3f3f3f;letter-spacing:0.4px;">前置条件只有一个：<strong style="color:#07c160;font-weight:600;">Go 1.23 或更高版本</strong>（源码 <code style="background:#f2f4f5;color:#c7254e;padding:2px 5px;border-radius:3px;font-size:13px;">go.mod</code> 里声明 <code style="background:#f2f4f5;color:#c7254e;padding:2px 5px;border-radius:3px;font-size:13px;">go 1.23.0</code>，实测 go1.23.5 可直接编译）。</p>
+<h3 style="margin:26px 0 14px 0;font-size:16px;font-weight:700;color:#1a1a1a;">第 1 步：编译</h3>
+<pre style="margin:0 0 20px 0;padding:14px 14px;background:#282c34;border-radius:4px;overflow-x:auto;-webkit-overflow-scrolling:touch;"><code style="background:none;color:#abb2bf;font-size:13px;line-height:1.7;display:block;" class="language-bash">git clone https://github.com/ibarryyan/issue2file
+cd issue2file
+go mod tidy
+go build -o issue2file
+</code></pre>
+<p style="margin:0 0 18px 0;font-size:15px;line-height:1.85;color:#3f3f3f;letter-spacing:0.4px;">不想编译也行，<code style="background:#f2f4f5;color:#c7254e;padding:2px 5px;border-radius:3px;font-size:13px;">go run .</code> 直接跑。编译完只有一个二进制文件，拷到 <code style="background:#f2f4f5;color:#c7254e;padding:2px 5px;border-radius:3px;font-size:13px;">$PATH</code> 里就是个全局命令。</p>
+<h3 style="margin:26px 0 14px 0;font-size:16px;font-weight:700;color:#1a1a1a;">第 2 步：准备一份配置文件（不要跳过）</h3>
+<pre style="margin:0 0 20px 0;padding:14px 14px;background:#282c34;border-radius:4px;overflow-x:auto;-webkit-overflow-scrolling:touch;"><code style="background:none;color:#abb2bf;font-size:13px;line-height:1.7;display:block;" class="language-bash">cp config.example.conf config.cnf
+</code></pre>
+<p style="margin:0 0 18px 0;font-size:15px;line-height:1.85;color:#3f3f3f;letter-spacing:0.4px;">然后编辑 <code style="background:#f2f4f5;color:#c7254e;padding:2px 5px;border-radius:3px;font-size:13px;">config.cnf</code>，至少确认这两行：</p>
+<pre style="margin:0 0 20px 0;padding:14px 14px;background:#282c34;border-radius:4px;overflow-x:auto;-webkit-overflow-scrolling:touch;"><code style="background:none;color:#abb2bf;font-size:13px;line-height:1.7;display:block;" class="language-toml">gitHubToken = &quot;&quot;          # 先留空也能跑，见下文「关于 Token」
+aiEnable    = false       # 默认不动，先跑通基础导出
+chartEnable = true
+commentEnable = true
+outputDir   = &quot;issues_output&quot;
+</code></pre>
+<h3 style="margin:26px 0 14px 0;font-size:16px;font-weight:700;color:#1a1a1a;">第 3 步：跑</h3>
+<pre style="margin:0 0 20px 0;padding:14px 14px;background:#282c34;border-radius:4px;overflow-x:auto;-webkit-overflow-scrolling:touch;"><code style="background:none;color:#abb2bf;font-size:13px;line-height:1.7;display:block;" class="language-bash">./issue2file -config=./config.cnf ibarryyan/issue2file
+</code></pre>
+<p style="margin:0 0 18px 0;font-size:15px;line-height:1.85;color:#3f3f3f;letter-spacing:0.4px;">真实输出长这样：</p>
+<pre style="margin:0 0 20px 0;padding:14px 14px;background:#282c34;border-radius:4px;overflow-x:auto;-webkit-overflow-scrolling:touch;"><code style="background:none;color:#abb2bf;font-size:13px;line-height:1.7;display:block;">已加载配置文件: ./config.cnf
+config: &amp;{GitHubToken: AIToken: AIModel:deepseek-chat ... CommentEnable:true AiEnable:false ChartEnable:true OutputDir:issues_output SummaryFile:summary.md}
+正在获取仓库 ibarryyan/issue2file 的issues...
+提示: 未提供GitHub Token，使用匿名访问（API限制较严格）
+已保存 issue #1: add github token config file or param
+完成！共保存了 1 个issues到目录: %!s(*string=0x14000044440)
+正在生成图表...
+图表生成完成，可在 issues_output/charts 目录查看
+</code></pre>
+<p style="margin:0 0 18px 0;font-size:15px;line-height:1.85;color:#3f3f3f;letter-spacing:0.4px;">（最后一行那串 <code style="background:#f2f4f5;color:#c7254e;padding:2px 5px;border-radius:3px;font-size:13px;">%!s(*string=...)</code> 是个日志打印的小 bug，文件其实已经正常落盘了，只是它把变量地址打了出来 —— 实际目录是 <code style="background:#f2f4f5;color:#c7254e;padding:2px 5px;border-radius:3px;font-size:13px;">issues_output/</code>。详细见第六节。）</p>
+<p style="margin:0 0 18px 0;font-size:15px;line-height:1.85;color:#3f3f3f;letter-spacing:0.4px;">仓库地址有三种写法，都支持：</p>
+<pre style="margin:0 0 20px 0;padding:14px 14px;background:#282c34;border-radius:4px;overflow-x:auto;-webkit-overflow-scrolling:touch;"><code style="background:none;color:#abb2bf;font-size:13px;line-height:1.7;display:block;" class="language-bash">./issue2file -config=./config.cnf owner/repo                 # 简短格式
+./issue2file -config=./config.cnf https://github.com/owner/repo
+./issue2file -config=./config.cnf git@github.com:owner/repo.git
+</code></pre>
+<p style="margin:0 0 18px 0;font-size:15px;line-height:1.85;color:#3f3f3f;letter-spacing:0.4px;">还有个很顺手的用法：在任意本地仓库目录里执行 <code style="background:#f2f4f5;color:#c7254e;padding:2px 5px;border-radius:3px;font-size:13px;">./issue2file -config=./config.cnf .</code>，它会读 <code style="background:#f2f4f5;color:#c7254e;padding:2px 5px;border-radius:3px;font-size:13px;">.git/config</code> 里的 <code style="background:#f2f4f5;color:#c7254e;padding:2px 5px;border-radius:3px;font-size:13px;">origin</code> 地址，自动认出当前仓库 —— 适合给自己正在维护的项目做定期归档。</p>
+<hr style="margin:30px 0;border:none;border-top:1px solid #e5e5e5;" />
+<h2 style="margin:34px 0 16px 0;font-size:18px;line-height:1.5;font-weight:700;color:#1a1a1a;border-left:4px solid #07c160;padding-left:10px;">三、它到底在干什么</h2>
+<p style="margin:0 0 18px 0;font-size:15px;line-height:1.85;color:#3f3f3f;letter-spacing:0.4px;">整个工具的逻辑其实只有一条主干，其余都是挂在主干上的可选分支：</p>
+<pre style="margin:0 0 20px 0;padding:14px 14px;background:#282c34;border-radius:4px;overflow-x:auto;-webkit-overflow-scrolling:touch;"><code style="background:none;color:#abb2bf;font-size:13px;line-height:1.7;display:block;">   命令行参数 / config.cnf
+            │
+            ▼
+   解析仓库地址    owner/repo · HTTPS/SSH URL · &quot;.&quot; 读 .git/config
+            │
+            ▼
+   GitHub Issues API   （state=all 全量拉取，100 条/页自动翻页）
+            │
+            ├──────────────►  &lt;输出目录&gt;/*.md       每个 Issue 一个文件（主干）
+            │
+            ├── aiEnable ───►  把所有 Issue 拼成一张 Markdown 表格
+            │                  → 发给大模型 → summary.md
+            │
+            └── chartEnable ─►  状态饼图 / 标签柱状图 / 时间趋势折线
+                               → charts/index.html
+</code></pre>
+<p style="margin:0 0 18px 0;font-size:15px;line-height:1.85;color:#3f3f3f;letter-spacing:0.4px;">值得注意的设计取舍：<strong style="color:#07c160;font-weight:600;">三个分支共享同一份内存里的 Issue 列表</strong>，也就是说它不是「导出完再读回来分析」，而是一次抓取、三种产物。好处是快，代价是 AI 和图表依赖一次运行，没法对已导出的旧文件重跑分析。</p>
+<p style="margin:0 0 18px 0;font-size:15px;line-height:1.85;color:#3f3f3f;letter-spacing:0.4px;">抓取用的是 GitHub 官方 REST API 的列出仓库 Issue 接口，这里有两个必须知道的行为：</p>
+<ol style="margin:0 0 18px 0;padding-left:22px;">
+<li style="margin:0 0 8px 0;font-size:15px;line-height:1.85;color:#3f3f3f;" style="margin:0 0 8px 0;font-size:15px;line-height:1.85;color:#3f3f3f;"><code style="background:#f2f4f5;color:#c7254e;padding:2px 5px;border-radius:3px;font-size:13px;">state=all</code>，所以<strong style="color:#07c160;font-weight:600;">已关闭的 Issue 也会导出</strong>，这正是做回顾和统计时最需要的部分。</li>
+<li style="margin:0 0 8px 0;font-size:15px;line-height:1.85;color:#3f3f3f;" style="margin:0 0 8px 0;font-size:15px;line-height:1.85;color:#3f3f3f;">这个接口在 GitHub 的语义里 <strong style="color:#07c160;font-weight:600;">Issue 包含 Pull Request</strong>（PR 本质上是带 <code style="background:#f2f4f5;color:#c7254e;padding:2px 5px;border-radius:3px;font-size:13px;">pull_request</code> 字段的 Issue）。我用 <code style="background:#f2f4f5;color:#c7254e;padding:2px 5px;border-radius:3px;font-size:13px;">octocat/Spoon-Knife</code> 实测调这个接口，返回的前 5 条全是 PR。issue2file 目前没有把这层过滤掉，所以导出结果里会混入 PR —— 这是当前版本需要注意的默认行为。</li>
+</ol>
+<hr style="margin:30px 0;border:none;border-top:1px solid #e5e5e5;" />
+<h2 style="margin:34px 0 16px 0;font-size:18px;line-height:1.5;font-weight:700;color:#1a1a1a;border-left:4px solid #07c160;padding-left:10px;">四、三个开关：评论、AI 总结、图表</h2>
+<p style="margin:0 0 18px 0;font-size:15px;line-height:1.85;color:#3f3f3f;letter-spacing:0.4px;">主干导出之外，三个功能开关本身互不依赖，可以任意组合。</p>
+<pre style="margin:0 0 20px 0;padding:14px 14px;background:#282c34;border-radius:4px;overflow-x:auto;-webkit-overflow-scrolling:touch;"><code style="background:none;color:#abb2bf;font-size:13px;line-height:1.7;display:block;" class="language-bash">./issue2file -config=./config.cnf owner/repo -comment   # 连带每条 Issue 的评论区一起导出
+./issue2file -config=./config.cnf owner/repo -ai        # 让大模型写一份分析总结
+./issue2file -config=./config.cnf owner/repo -chart     # 生成三张 ECharts 图表
+</code></pre>
+<p style="margin:0 0 18px 0;font-size:15px;line-height:1.85;color:#3f3f3f;letter-spacing:0.4px;"><strong style="color:#07c160;font-weight:600;">图表</strong>是最容易出效果的一个。它会在 <code style="background:#f2f4f5;color:#c7254e;padding:2px 5px;border-radius:3px;font-size:13px;">&lt;输出目录&gt;/charts/</code> 下生成 4 个 HTML 文件，直接浏览器打开 <code style="background:#f2f4f5;color:#c7254e;padding:2px 5px;border-radius:3px;font-size:13px;">index.html</code> 即可：</p>
+<ul style="margin:0 0 18px 0;padding-left:0;list-style:none;">
+<li style="margin:0 0 8px 0;font-size:15px;line-height:1.85;color:#3f3f3f;" style="margin:0 0 8px 0;font-size:15px;line-height:1.85;color:#3f3f3f;"><code style="background:#f2f4f5;color:#c7254e;padding:2px 5px;border-radius:3px;font-size:13px;">status_chart.html</code> —— 状态分布饼图（open / closed 占比）</li>
+<li style="margin:0 0 8px 0;font-size:15px;line-height:1.85;color:#3f3f3f;" style="margin:0 0 8px 0;font-size:15px;line-height:1.85;color:#3f3f3f;"><code style="background:#f2f4f5;color:#c7254e;padding:2px 5px;border-radius:3px;font-size:13px;">labels_chart.html</code> —— 标签分布柱状图（按数量取前 10）</li>
+<li style="margin:0 0 8px 0;font-size:15px;line-height:1.85;color:#3f3f3f;" style="margin:0 0 8px 0;font-size:15px;line-height:1.85;color:#3f3f3f;"><code style="background:#f2f4f5;color:#c7254e;padding:2px 5px;border-radius:3px;font-size:13px;">timeline_chart.html</code> —— 按月的新建趋势折线，带最值标记和平均线</li>
+<li style="margin:0 0 8px 0;font-size:15px;line-height:1.85;color:#3f3f3f;" style="margin:0 0 8px 0;font-size:15px;line-height:1.85;color:#3f3f3f;"><code style="background:#f2f4f5;color:#c7254e;padding:2px 5px;border-radius:3px;font-size:13px;">index.html</code> —— 上面三个的入口导航页</li>
+</ul>
+<p style="margin:0 0 18px 0;font-size:15px;line-height:1.85;color:#3f3f3f;letter-spacing:0.4px;">底层是 go-echarts，生成的是自带 ECharts 的完整 HTML，双击就能看，不需要起服务。</p>
+<p style="margin:0 0 18px 0;font-size:15px;line-height:1.85;color:#3f3f3f;letter-spacing:0.4px;"><strong style="color:#07c160;font-weight:600;">AI 总结</strong>输出 <code style="background:#f2f4f5;color:#c7254e;padding:2px 5px;border-radius:3px;font-size:13px;">&lt;输出目录&gt;/summary.md</code>：上半部分是模型的分析结论，下半部分是一张所有 Issue 的索引表格，编号带原文链接。它的做法很直接 —— 把所有 Issue 的编号、标题、状态、创建时间、标签拼成一张 Markdown 表格，再加上每条 Issue 的正文，一次性投给模型。</p>
+<p style="margin:0 0 18px 0;font-size:15px;line-height:1.85;color:#3f3f3f;letter-spacing:0.4px;">这里有个实用技巧：<code style="background:#f2f4f5;color:#c7254e;padding:2px 5px;border-radius:3px;font-size:13px;">aiBaseURL</code> + <code style="background:#f2f4f5;color:#c7254e;padding:2px 5px;border-radius:3px;font-size:13px;">aiModel</code> + <code style="background:#f2f4f5;color:#c7254e;padding:2px 5px;border-radius:3px;font-size:13px;">aiToken</code> 三个参数是分开的，底层走的是 OpenAI 兼容协议，所以<strong style="color:#07c160;font-weight:600;">不限于 DeepSeek</strong>。换成任何 OpenAI 兼容的服务（包括本地跑的 vLLM / Ollama）都可以：</p>
+<pre style="margin:0 0 20px 0;padding:14px 14px;background:#282c34;border-radius:4px;overflow-x:auto;-webkit-overflow-scrolling:touch;"><code style="background:none;color:#abb2bf;font-size:13px;line-height:1.7;display:block;" class="language-bash">./issue2file -config=./config.cnf owner/repo \
+  -ai -aiModel deepseek-chat -aiBaseURL https://api.deepseek.com/v1
+</code></pre>
+<blockquote style="margin:0 0 20px 0;padding:12px 14px;background:#f7f9f8;border-left:3px solid #07c160;color:#3f3f3f;">
+<p style="margin:0 0 18px 0;font-size:15px;line-height:1.85;color:#3f3f3f;letter-spacing:0.4px;">⚠️ 注意 <code style="background:#f2f4f5;color:#c7254e;padding:2px 5px;border-radius:3px;font-size:13px;">-aiBaseURL</code> 的取值规则，这是实测出来的：工具最终请求的 URL 是 <strong style="color:#07c160;font-weight:600;"><code style="background:#f2f4f5;color:#c7254e;padding:2px 5px;border-radius:3px;font-size:13px;">aiBaseURL</code> 直接拼接上 <code style="background:#f2f4f5;color:#c7254e;padding:2px 5px;border-radius:3px;font-size:13px;">/chat/completions</code></strong>。我用一个本地 mock 服务验证过，填 <code style="background:#f2f4f5;color:#c7254e;padding:2px 5px;border-radius:3px;font-size:13px;">http://127.0.0.1:8799/v1</code> 时收到的请求路径是 <code style="background:#f2f4f5;color:#c7254e;padding:2px 5px;border-radius:3px;font-size:13px;">/v1/chat/completions</code>。所以这里必须填<strong style="color:#07c160;font-weight:600;">到版本号为止的根地址</strong>（<code style="background:#f2f4f5;color:#c7254e;padding:2px 5px;border-radius:3px;font-size:13px;">https://api.deepseek.com/v1</code>），不能像仓库示例配置里那样带上 <code style="background:#f2f4f5;color:#c7254e;padding:2px 5px;border-radius:3px;font-size:13px;">/chat/completions</code>，否则拼出来会变成 <code style="background:#f2f4f5;color:#c7254e;padding:2px 5px;border-radius:3px;font-size:13px;">.../v1/chat/completions/chat/completions</code>。</p>
+</blockquote>
+<hr style="margin:30px 0;border:none;border-top:1px solid #e5e5e5;" />
+<h2 style="margin:34px 0 16px 0;font-size:18px;line-height:1.5;font-weight:700;color:#1a1a1a;border-left:4px solid #07c160;padding-left:10px;">五、导出结果长什么样</h2>
+<p style="margin:0 0 18px 0;font-size:15px;line-height:1.85;color:#3f3f3f;letter-spacing:0.4px;"><code style="background:#f2f4f5;color:#c7254e;padding:2px 5px;border-radius:3px;font-size:13px;">&lt;输出目录&gt;/</code> 下的每个 Markdown 文件对应一个 Issue，文件名格式 <code style="background:#f2f4f5;color:#c7254e;padding:2px 5px;border-radius:3px;font-size:13px;">issue_&lt;编号&gt;_&lt;标题&gt;.md</code>（标题做过特殊字符清洗，并截断到 50 个字符）。内容示例：</p>
+<pre style="margin:0 0 20px 0;padding:14px 14px;background:#282c34;border-radius:4px;overflow-x:auto;-webkit-overflow-scrolling:touch;"><code style="background:none;color:#abb2bf;font-size:13px;line-height:1.7;display:block;" class="language-markdown"># Issue #1: add github token config file or param
+
+## 基本信息
+
+- **编号**: #1
+- **状态**: closed
+- **创建者**: @ibarryyan
+- **创建时间**: 2025-07-28 01:45:41
+- **更新时间**: 2025-09-14 04:08:24
+- **关闭时间**: 2025-09-14 04:08:24
+- **链接**: https://github.com/ibarryyan/issue2file/issues/1
+
+## 描述
+
+使用环境变量的方式会增加使用者的操作步骤，...
+</code></pre>
+<p style="margin:0 0 18px 0;font-size:15px;line-height:1.85;color:#3f3f3f;letter-spacing:0.4px;">开了 <code style="background:#f2f4f5;color:#c7254e;padding:2px 5px;border-radius:3px;font-size:13px;">-comment</code> 的话，正文后面会追加「## 评论」，每条评论标注作者和时间。这套格式对人和对机器都友好 —— 尤其适合直接整目录丢给支持文件投喂的 AI 客户端，或者塞进本地知识库做检索。</p>
+<hr style="margin:30px 0;border:none;border-top:1px solid #e5e5e5;" />
+<h2 style="margin:34px 0 16px 0;font-size:18px;line-height:1.5;font-weight:700;color:#1a1a1a;border-left:4px solid #07c160;padding-left:10px;">六、6 个实测踩坑点</h2>
+<p style="margin:0 0 18px 0;font-size:15px;line-height:1.85;color:#3f3f3f;letter-spacing:0.4px;">这一节是上手时真正会卡住你的地方。前 5 条都按当前源码实测过。</p>
+<p style="margin:0 0 18px 0;font-size:15px;line-height:1.85;color:#3f3f3f;letter-spacing:0.4px;"><strong style="color:#07c160;font-weight:600;">1. 不带 <code style="background:#f2f4f5;color:#c7254e;padding:2px 5px;border-radius:3px;font-size:13px;">-config</code> 会直接 panic</strong></p>
+<p style="margin:0 0 18px 0;font-size:15px;line-height:1.85;color:#3f3f3f;letter-spacing:0.4px;"><code style="background:#f2f4f5;color:#c7254e;padding:2px 5px;border-radius:3px;font-size:13px;">-config</code> 的默认值是 <code style="background:#f2f4f5;color:#c7254e;padding:2px 5px;border-radius:3px;font-size:13px;">config.example.conf</code>，而加载配置的代码要求路径里必须含 <code style="background:#f2f4f5;color:#c7254e;padding:2px 5px;border-radius:3px;font-size:13px;">/</code>。所以这条看着最自然的命令会崩：</p>
+<pre style="margin:0 0 20px 0;padding:14px 14px;background:#282c34;border-radius:4px;overflow-x:auto;-webkit-overflow-scrolling:touch;"><code style="background:none;color:#abb2bf;font-size:13px;line-height:1.7;display:block;" class="language-bash">$ ./issue2file owner/repo
+panic: config err
+</code></pre>
+<p style="margin:0 0 18px 0;font-size:15px;line-height:1.85;color:#3f3f3f;letter-spacing:0.4px;">即使路径不含斜杠也一样：<code style="background:#f2f4f5;color:#c7254e;padding:2px 5px;border-radius:3px;font-size:13px;">-config=config.cnf</code> → 同样 panic。<strong style="color:#07c160;font-weight:600;">照着本文第二节那样写成 <code style="background:#f2f4f5;color:#c7254e;padding:2px 5px;border-radius:3px;font-size:13px;">-config=./config.cnf</code> 就行</strong>。</p>
+<p style="margin:0 0 18px 0;font-size:15px;line-height:1.85;color:#3f3f3f;letter-spacing:0.4px;"><strong style="color:#07c160;font-weight:600;">2. <code style="background:#f2f4f5;color:#c7254e;padding:2px 5px;border-radius:3px;font-size:13px;">-config</code> 不支持绝对路径</strong></p>
+<p style="margin:0 0 18px 0;font-size:15px;line-height:1.85;color:#3f3f3f;letter-spacing:0.4px;">路径拼接会把 <code style="background:#f2f4f5;color:#c7254e;padding:2px 5px;border-radius:3px;font-size:13px;">/</code> 丢掉，<code style="background:#f2f4f5;color:#c7254e;padding:2px 5px;border-radius:3px;font-size:13px;">-config=/tmp/foo/config.cnf</code> 会去找 <code style="background:#f2f4f5;color:#c7254e;padding:2px 5px;border-radius:3px;font-size:13px;">/tmp/foo/tmpfoo</code>。<strong style="color:#07c160;font-weight:600;">用相对路径，比如 <code style="background:#f2f4f5;color:#c7254e;padding:2px 5px;border-radius:3px;font-size:13px;">-config=./config.cnf</code>。</strong></p>
+<p style="margin:0 0 18px 0;font-size:15px;line-height:1.85;color:#3f3f3f;letter-spacing:0.4px;"><strong style="color:#07c160;font-weight:600;">3. 配置项必须用小驼峰，README 里的下划线写法读不到</strong></p>
+<p style="margin:0 0 18px 0;font-size:15px;line-height:1.85;color:#3f3f3f;letter-spacing:0.4px;">代码读的是 <code style="background:#f2f4f5;color:#c7254e;padding:2px 5px;border-radius:3px;font-size:13px;">gitHubToken</code>、<code style="background:#f2f4f5;color:#c7254e;padding:2px 5px;border-radius:3px;font-size:13px;">aiToken</code>、<code style="background:#f2f4f5;color:#c7254e;padding:2px 5px;border-radius:3px;font-size:13px;">aiModel</code>、<code style="background:#f2f4f5;color:#c7254e;padding:2px 5px;border-radius:3px;font-size:13px;">aiBaseURL</code>、<code style="background:#f2f4f5;color:#c7254e;padding:2px 5px;border-radius:3px;font-size:13px;">commentEnable</code>、<code style="background:#f2f4f5;color:#c7254e;padding:2px 5px;border-radius:3px;font-size:13px;">aiEnable</code>、<code style="background:#f2f4f5;color:#c7254e;padding:2px 5px;border-radius:3px;font-size:13px;">chartEnable</code>、<code style="background:#f2f4f5;color:#c7254e;padding:2px 5px;border-radius:3px;font-size:13px;">outputDir</code>、<code style="background:#f2f4f5;color:#c7254e;padding:2px 5px;border-radius:3px;font-size:13px;">summaryFile</code>。我实测过：写 <code style="background:#f2f4f5;color:#c7254e;padding:2px 5px;border-radius:3px;font-size:13px;">github_token = "xxx"</code> 加载后仍是空值，Token 不会生效。完整正确示例：</p>
+<pre style="margin:0 0 20px 0;padding:14px 14px;background:#282c34;border-radius:4px;overflow-x:auto;-webkit-overflow-scrolling:touch;"><code style="background:none;color:#abb2bf;font-size:13px;line-height:1.7;display:block;" class="language-toml">gitHubToken   = &quot;ghp_xxx&quot;      # GitHub Personal Access Token（个人访问令牌）
+aiToken       = &quot;sk-xxx&quot;
+aiModel       = &quot;deepseek-chat&quot;
+aiBaseURL     = &quot;https://api.deepseek.com/v1&quot;   # 注意：不要带 /chat/completions
+commentEnable = true
+aiEnable      = false
+chartEnable   = true
+outputDir     = &quot;issues_output&quot;
+summaryFile   = &quot;summary.md&quot;
+</code></pre>
+<p style="margin:0 0 18px 0;font-size:15px;line-height:1.85;color:#3f3f3f;letter-spacing:0.4px;"><strong style="color:#07c160;font-weight:600;">4. 配置文件里的开关会覆盖命令行参数</strong></p>
+<p style="margin:0 0 18px 0;font-size:15px;line-height:1.85;color:#3f3f3f;letter-spacing:0.4px;">代码里字符串配置是「非空才覆盖」，但三个布尔开关是<strong style="color:#07c160;font-weight:600;">无条件覆盖</strong>。也就是说配置了 <code style="background:#f2f4f5;color:#c7254e;padding:2px 5px;border-radius:3px;font-size:13px;">aiEnable = false</code> 之后，命令行再写 <code style="background:#f2f4f5;color:#c7254e;padding:2px 5px;border-radius:3px;font-size:13px;">-ai</code> 是没用的。想切换 AI，改配置文件更可靠。</p>
+<p style="margin:0 0 18px 0;font-size:15px;line-height:1.85;color:#3f3f3f;letter-spacing:0.4px;"><strong style="color:#07c160;font-weight:600;">5. README 里 <code style="background:#f2f4f5;color:#c7254e;padding:2px 5px;border-radius:3px;font-size:13px;">--ai true</code> 这种写法会报错</strong></p>
+<p style="margin:0 0 18px 0;font-size:15px;line-height:1.85;color:#3f3f3f;letter-spacing:0.4px;">Go 的 flag 包会把 <code style="background:#f2f4f5;color:#c7254e;padding:2px 5px;border-radius:3px;font-size:13px;">true</code> 当成一个位置参数，于是工具把它当成仓库地址去解析：</p>
+<pre style="margin:0 0 20px 0;padding:14px 14px;background:#282c34;border-radius:4px;overflow-x:auto;-webkit-overflow-scrolling:touch;"><code style="background:none;color:#abb2bf;font-size:13px;line-height:1.7;display:block;">level=fatal msg=&quot;无法解析仓库地址: 无法解析仓库URL: true&quot;
+</code></pre>
+<p style="margin:0 0 18px 0;font-size:15px;line-height:1.85;color:#3f3f3f;letter-spacing:0.4px;">正确写法是 <code style="background:#f2f4f5;color:#c7254e;padding:2px 5px;border-radius:3px;font-size:13px;">-ai</code>（或者 <code style="background:#f2f4f5;color:#c7254e;padding:2px 5px;border-radius:3px;font-size:13px;">-ai=true</code>），同理 <code style="background:#f2f4f5;color:#c7254e;padding:2px 5px;border-radius:3px;font-size:13px;">-comment</code>、<code style="background:#f2f4f5;color:#c7254e;padding:2px 5px;border-radius:3px;font-size:13px;">-chart</code>。另外 README 里提到的 <code style="background:#f2f4f5;color:#c7254e;padding:2px 5px;border-radius:3px;font-size:13px;">--ai-summary</code> 参数在当前代码里并不存在。</p>
+<p style="margin:0 0 18px 0;font-size:15px;line-height:1.85;color:#3f3f3f;letter-spacing:0.4px;"><strong style="color:#07c160;font-weight:600;">6. 关于 Token 和请求预算</strong></p>
+<p style="margin:0 0 18px 0;font-size:15px;line-height:1.85;color:#3f3f3f;letter-spacing:0.4px;">不配 Token 也能跑，但是匿名访问。GitHub 官方限额是<strong style="color:#07c160;font-weight:600;">匿名每小时 60 次请求，带 Personal Access Token 是每小时 5000 次</strong>。开着 <code style="background:#f2f4f5;color:#c7254e;padding:2px 5px;border-radius:3px;font-size:13px;">-comment</code> 时，每条 Issue 会额外发一次评论请求，所以总请求数 ≈ <code style="background:#f2f4f5;color:#c7254e;padding:2px 5px;border-radius:3px;font-size:13px;">Issue 数 + Issue 数/100</code>。粗算：<strong style="color:#07c160;font-weight:600;">不配 Token 大概只能导出 50 来条带评论的 Issue</strong>，配了 Token 才能从容处理上千条。</p>
+<p style="margin:0 0 18px 0;font-size:15px;line-height:1.85;color:#3f3f3f;letter-spacing:0.4px;">Token 在 GitHub Settings → Developer settings → Personal access tokens 生成，公开仓库勾 <code style="background:#f2f4f5;color:#c7254e;padding:2px 5px;border-radius:3px;font-size:13px;">public_repo</code> 即可，私有仓库需要 <code style="background:#f2f4f5;color:#c7254e;padding:2px 5px;border-radius:3px;font-size:13px;">repo</code> 权限。Token 的读取优先级是<strong style="color:#07c160;font-weight:600;">配置文件 <code style="background:#f2f4f5;color:#c7254e;padding:2px 5px;border-radius:3px;font-size:13px;">gitHubToken</code> &gt; 命令行 <code style="background:#f2f4f5;color:#c7254e;padding:2px 5px;border-radius:3px;font-size:13px;">-token</code> &gt; 环境变量 <code style="background:#f2f4f5;color:#c7254e;padding:2px 5px;border-radius:3px;font-size:13px;">GITHUB_TOKEN</code></strong>（配置文件非空时直接覆盖命令行，这是代码里的实际顺序）。AI 侧同理，<code style="background:#f2f4f5;color:#c7254e;padding:2px 5px;border-radius:3px;font-size:13px;">aiToken</code> / <code style="background:#f2f4f5;color:#c7254e;padding:2px 5px;border-radius:3px;font-size:13px;">-aiToken</code> / <code style="background:#f2f4f5;color:#c7254e;padding:2px 5px;border-radius:3px;font-size:13px;">AI_TOKEN</code> 环境变量三者一致。没有 Token 时不会报错拦截，只是退化成匿名访问并打印一行提示。</p>
+<p style="margin:0 0 18px 0;font-size:15px;line-height:1.85;color:#3f3f3f;letter-spacing:0.4px;">补充一个小贴士：Token 写错了不会静默失败，会给出明确报错（我用假 Token 实测）：</p>
+<pre style="margin:0 0 20px 0;padding:14px 14px;background:#282c34;border-radius:4px;overflow-x:auto;-webkit-overflow-scrolling:touch;"><code style="background:none;color:#abb2bf;font-size:13px;line-height:1.7;display:block;">level=fatal msg=&quot;获取issues失败: ... 401 Bad credentials []&quot;
+</code></pre>
+<hr style="margin:30px 0;border:none;border-top:1px solid #e5e5e5;" />
+<h2 style="margin:34px 0 16px 0;font-size:18px;line-height:1.5;font-weight:700;color:#1a1a1a;border-left:4px solid #07c160;padding-left:10px;">七、什么时候用，什么时候别用</h2>
+<p style="margin:0 0 18px 0;font-size:15px;line-height:1.85;color:#3f3f3f;letter-spacing:0.4px;"><strong style="color:#07c160;font-weight:600;">适合用</strong>：给开源项目做阶段回顾或交接文档；把 Issue 批量整理进本地知识库 / 投喂给 AI；快速看一个陌生仓库的维护负担分布（图表三件套很直观）；定期归档自己仓库的 Issue 快照。</p>
+<p style="margin:0 0 18px 0;font-size:15px;line-height:1.85;color:#3f3f3f;letter-spacing:0.4px;"><strong style="color:#07c160;font-weight:600;">不适合用</strong>：</p>
+<ul style="margin:0 0 18px 0;padding-left:0;list-style:none;">
+<li style="margin:0 0 8px 0;font-size:15px;line-height:1.85;color:#3f3f3f;" style="margin:0 0 8px 0;font-size:15px;line-height:1.85;color:#3f3f3f;"><strong style="color:#07c160;font-weight:600;">要增量同步</strong>。它每次都是全量覆盖导出，没有基于更新时间的增量逻辑，也不记录上次抓到哪。仓库很大时，建议先 <code style="background:#f2f4f5;color:#c7254e;padding:2px 5px;border-radius:3px;font-size:13px;">outputDir</code> 分目录，或直接当成一次性快照工具。</li>
+<li style="margin:0 0 8px 0;font-size:15px;line-height:1.85;color:#3f3f3f;" style="margin:0 0 8px 0;font-size:15px;line-height:1.85;color:#3f3f3f;"><strong style="color:#07c160;font-weight:600;">超大型仓库开 AI 总结</strong>。一次性把所有正文塞进单次请求，Issue 多到一定规模会超出模型上下文窗口；这种情况下建议先按时间/标签分批导出再总结。</li>
+<li style="margin:0 0 8px 0;font-size:15px;line-height:1.85;color:#3f3f3f;" style="margin:0 0 8px 0;font-size:15px;line-height:1.85;color:#3f3f3f;"><strong style="color:#07c160;font-weight:600;">需要把 PR 和 Issue 严格分开</strong>（见第三节，当前版本会把 PR 一起导出）。</li>
+<li style="margin:0 0 8px 0;font-size:15px;line-height:1.85;color:#3f3f3f;" style="margin:0 0 8px 0;font-size:15px;line-height:1.85;color:#3f3f3f;"><strong style="color:#07c160;font-weight:600;">要精确过滤</strong>。目前不支持按标签、时间区间或里程碑筛选，拉下来就是全部。</li>
+</ul>
+<p style="margin:0 0 18px 0;font-size:15px;line-height:1.85;color:#3f3f3f;letter-spacing:0.4px;">除此之外还有个小规模安全提示：Issue 正文里的 HTML/脚本不会被转义（原样写入 Markdown），如果你打算把导出结果发布到会渲染 HTML 的平台上，先心里有数。</p>
+<hr style="margin:30px 0;border:none;border-top:1px solid #e5e5e5;" />
+<h2 style="margin:34px 0 16px 0;font-size:18px;line-height:1.5;font-weight:700;color:#1a1a1a;border-left:4px solid #07c160;padding-left:10px;">八、下一步</h2>
+<p style="margin:0 0 18px 0;font-size:15px;line-height:1.85;color:#3f3f3f;letter-spacing:0.4px;">先把你最常逛的那个仓库导一遍试试，开 <code style="background:#f2f4f5;color:#c7254e;padding:2px 5px;border-radius:3px;font-size:13px;">-chart</code> 看一眼它的状态分布和创建趋势，比翻网页直观得多。</p>
+<pre style="margin:0 0 20px 0;padding:14px 14px;background:#282c34;border-radius:4px;overflow-x:auto;-webkit-overflow-scrolling:touch;"><code style="background:none;color:#abb2bf;font-size:13px;line-height:1.7;display:block;">github.com/ibarryyan/issue2file
+</code></pre>
+<p style="margin:0 0 18px 0;font-size:15px;line-height:1.85;color:#3f3f3f;letter-spacing:0.4px;">项目是 MIT 协议。上手过程中如果遇到本文没覆盖的问题，可以到仓库提 Issue —— 顺带一提，文中提到的几个小坑（<code style="background:#f2f4f5;color:#c7254e;padding:2px 5px;border-radius:3px;font-size:13px;">-config</code> 路径处理、<code style="background:#f2f4f5;color:#c7254e;padding:2px 5px;border-radius:3px;font-size:13px;">%!s(...)</code> 日志打印、PR 过滤）都是几行代码能修的改动，欢迎顺手 PR。</p>
+<hr style="margin:30px 0;border:none;border-top:1px solid #e5e5e5;" />
+<p style="margin:0 0 18px 0;font-size:15px;line-height:1.85;color:#3f3f3f;letter-spacing:0.4px;"><em style="color:#8a8a8a;font-style:normal;font-size:13px;">如果这篇对你有用，欢迎点个「在看」或转发给同样在维护仓库的朋友。</em></p>
+  </div>
+</body>
+</html>
