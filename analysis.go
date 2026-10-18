@@ -74,9 +74,23 @@ var (
 )
 
 const (
-	bodyScanLimit    = 4000 // 分类时正文最多扫描的字符数（按字节截断，够用即可）
+	bodyScanLimit    = 4000 // 分类时正文最多扫描的字符数（够用即可）
 	keywordScanLimit = 6000 // 关键词抽取时正文最多扫描的字符数
 )
+
+// limitRunes 按字符（而不是字节）截断。
+// 按字节切会把多字节汉字切成两半，产生非法 UTF-8，
+// 让跨边界的中文关键词恰好匹配不上。
+func limitRunes(s string, n int) string {
+	if len(s) <= n {
+		return s
+	}
+	rs := []rune(s)
+	if len(rs) <= n {
+		return s
+	}
+	return string(rs[:n])
+}
 
 var stopWordsEn = map[string]bool{
 	"the": true, "and": true, "for": true, "that": true, "this": true, "with": true, "from": true,
@@ -141,7 +155,7 @@ func classifyIssue(title string, labels []string, body string) (string, []string
 	titleL := strings.ToLower(title)
 	labelL := strings.ToLower(strings.Join(labels, " "))
 	if len(body) > bodyScanLimit {
-		body = body[:bodyScanLimit]
+		body = limitRunes(body, bodyScanLimit)
 	}
 	bodyL := strings.ToLower(body)
 
@@ -236,7 +250,7 @@ func priorityOf(state string, days, comments int, category, title, body string, 
 func hasUrgentSignal(title, body string) bool {
 	hay := strings.ToLower(title)
 	if len(body) > bodyScanLimit {
-		body = body[:bodyScanLimit]
+		body = limitRunes(body, bodyScanLimit)
 	}
 	hay += " " + strings.ToLower(body)
 	for _, kw := range urgentKeywords {
@@ -255,7 +269,7 @@ func extractKeywords(title, body string, limit int) []string {
 		limit = 8
 	}
 	if len(body) > keywordScanLimit {
-		body = body[:keywordScanLimit]
+		body = limitRunes(body, keywordScanLimit)
 	}
 	text := title + " " + body
 

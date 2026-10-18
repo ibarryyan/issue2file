@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"flag"
 	"fmt"
 	"os"
@@ -66,7 +67,7 @@ func main() {
 		token     = flag.String("token", "", "GitHub API token")
 		aiToken   = flag.String("aiToken", "", "AI API token")
 		aiModel   = flag.String("aiModel", "deepseek-chat", "AI model name")
-		aiBaseURL = flag.String("aiBaseURL", "https://api.deepseek.com/v1/chat/completions", "AI base URL")
+		aiBaseURL = flag.String("aiBaseURL", "https://api.deepseek.com/v1", "AI base URL（前缀即可，SDK 会自动补 /chat/completions）")
 
 		commentEnable = flag.Bool("comment", false, "是否下载issue评论")
 		aiEnable      = flag.Bool("ai", false, "是否使用AI分析issues")
@@ -89,14 +90,13 @@ func main() {
 	// 解析命令行参数
 	flag.CommandLine.Parse(normalizeArgs(os.Args[1:]))
 
-	// 只有显式写了 -config 才要求配置文件必须存在；
-	// 默认路径缺失时静默跳过，否则「直接双击运行」会因为找不到示例配置而退出。
-	configExplicit := false
-	flag.Visit(func(f *flag.Flag) {
-		if f.Name == "config" {
-			configExplicit = true
-		}
-	})
+	// 记录用户在命令行上显式写出的 flag —— 这些值不应被配置文件再覆盖一次。
+	// 之前只对 config 做了这个判断，结果 `-web -port 9000` 这类显式参数
+	// 会被默认配置文件 config.example.conf 里的 port 悄悄改掉，
+	// 用户在终端看到的端口和自己在命令行写的不一致，且没有任何提示。
+	setFlags := map[string]bool{}
+	flag.Visit(func(f *flag.Flag) { setFlags[f.Name] = true })
+	configExplicit := setFlags["config"]
 
 	// 如果指定了配置文件，则加载配置文件
 	var config *Config
@@ -107,7 +107,14 @@ func main() {
 			if configExplicit {
 				log.Fatalf("加载配置文件失败: %v \n", err)
 			}
-			log.Debugf("未加载默认配置文件 %s: %v", *configFile, err)
+			if errors.Is(err, os.ErrNotExist) {
+				// 默认示例配置没拷过来属于预期情况，静默跳过即可
+				log.Debugf("未加载默认配置文件 %s: %v", *configFile, err)
+			} else {
+				// 文件存在但内容有问题（TOML 语法错误、权限不足等）必须让用户看见，
+				// 否则写错一行会让 token、输出目录等配置全部静默失效。
+				log.Warnf("配置文件 %s 存在但加载失败，本次运行已忽略该文件：%v", *configFile, err)
+			}
 			config = nil
 		}
 	}
@@ -115,45 +122,46 @@ func main() {
 	if config != nil {
 		fmt.Printf("已加载配置文件: %s\n", *configFile)
 
-		// 使用配置文件中的参数覆盖命令行参数
-		if config.GitHubToken != "" {
+		// 使用配置文件补充未在命令行显式指定的参数。
+		// 命令行优先：显式写出过的 flag 一律保持原值。
+		if !setFlags["token"] && config.GitHubToken != "" {
 			*token = config.GitHubToken
 		}
-		if config.AIToken != "" {
+		if !setFlags["aiToken"] && config.AIToken != "" {
 			*aiToken = config.AIToken
 		}
-		if config.AIModel != "" {
+		if !setFlags["aiModel"] && config.AIModel != "" {
 			*aiModel = config.AIModel
 		}
-		if config.AIBaseURL != "" {
+		if !setFlags["aiBaseURL"] && config.AIBaseURL != "" {
 			*aiBaseURL = config.AIBaseURL
 		}
 		// 只有当配置文件中明确声明了这些键时才覆盖命令行参数
-		if config.CommentEnable != nil {
+		if !setFlags["comment"] && config.CommentEnable != nil {
 			*commentEnable = *config.CommentEnable
 		}
-		if config.AiEnable != nil {
+		if !setFlags["ai"] && config.AiEnable != nil {
 			*aiEnable = *config.AiEnable
 		}
-		if config.ChartEnable != nil {
+		if !setFlags["chart"] && config.ChartEnable != nil {
 			*chartEnable = *config.ChartEnable
 		}
-		if config.DashboardEnable != nil {
+		if !setFlags["dashboard"] && config.DashboardEnable != nil {
 			*dashboardEnable = *config.DashboardEnable
 		}
-		if config.IncludePR != nil {
+		if !setFlags["includePR"] && config.IncludePR != nil {
 			*includePR = *config.IncludePR
 		}
-		if config.Serve != nil {
+		if !setFlags["serve"] && config.Serve != nil {
 			*serve = *config.Serve
 		}
-		if config.Port > 0 {
+		if !setFlags["port"] && config.Port > 0 {
 			*port = config.Port
 		}
-		if config.OutputDir != "" {
+		if !setFlags["output"] && config.OutputDir != "" {
 			*outputDir = config.OutputDir
 		}
-		if config.SummaryFile != "" {
+		if !setFlags["filename"] && config.SummaryFile != "" {
 			*summaryFile = config.SummaryFile
 		}
 		// 打印脱敏后的配置摘要，不要把 token 打到终端或日志
@@ -333,7 +341,7 @@ const maxIssuePages = 500
 // limit > 0 时最多返回 limit 条，用于给超大仓库兜底。
 func fetchIssuesWithContext(ctx context.Context, client *github.Client, owner, repo string, includePR bool, limit int) ([]*github.Issue, error) {
 	var allIssues []*github.Issue
-	var pulled int
+	var prFiltered int
 	var truncated bool
 	opts := &github.IssueListByRepoOptions{
 		State: "all", // 获取所有状态的issues
@@ -345,12 +353,14 @@ func fetchIssuesWithContext(ctx context.Context, client *github.Client, owner, r
 	for page := 0; page < maxIssuePages; page++ {
 		issues, resp, err := client.Issues.ListByRepo(ctx, owner, repo, opts)
 		if err != nil {
+			// 用 %w 保留原始错误：调用方（Web 模式）需要 errors.As 识别出
+			// 403/404/限流才能给出可照做的提示。
 			return nil, fmt.Errorf("获取issues失败: %w", err)
 		}
 
-		pulled += len(issues)
 		for _, issue := range issues {
 			if !includePR && issue.IsPullRequest() {
+				prFiltered++
 				continue
 			}
 			if limit > 0 && len(allIssues) >= limit {
@@ -366,8 +376,9 @@ func fetchIssuesWithContext(ctx context.Context, client *github.Client, owner, r
 		opts.Page = resp.NextPage
 	}
 
-	if !includePR && pulled != len(allIssues) {
-		fmt.Printf("已过滤 %d 个 Pull Request，剩余 %d 个 issue\n", pulled-len(allIssues), len(allIssues))
+	// 分别计数，避免截断时把"被截断的 issue"算进"被过滤的 PR"里
+	if prFiltered > 0 {
+		fmt.Printf("已过滤 %d 个 Pull Request，剩余 %d 个 issue\n", prFiltered, len(allIssues))
 	}
 	if truncated {
 		fmt.Printf("issue 数量超过上限 %d，已截断\n", limit)

@@ -137,7 +137,20 @@ func (s *sessionStore) Get(id string) *session {
 		return nil
 	}
 	sess.LastAccess = now
+	s.touchLocked(id)
 	return sess
+}
+
+// touchLocked 把 id 移到队尾，让容量淘汰走真正的 LRU。
+// 不做这一步的话，用户正在反复查看的那个会话会在拉到第 N 个仓库时被无辜挤掉。
+func (s *sessionStore) touchLocked(id string) {
+	for i, v := range s.order {
+		if v == id {
+			s.order = append(s.order[:i], s.order[i+1:]...)
+			s.order = append(s.order, id)
+			return
+		}
+	}
 }
 
 func (s *sessionStore) sweepLocked(now time.Time) {
@@ -218,7 +231,49 @@ func (s *webServer) routes() http.Handler {
 	mux.HandleFunc("/api/fetch", s.handleFetch)
 	mux.HandleFunc("/api/analyze", s.handleAnalyze)
 	mux.HandleFunc("/api/export", s.handleExport)
-	return mux
+	return s.localOnly(mux)
+}
+
+// localOnly 拒绝非本机的请求，并给所有响应加上基础安全头。
+//
+// 为什么必须做：这个服务手里握着 GitHub Token，能读到私有仓库的 issue 正文，
+// 而且 /api/export 会把正文整包吐给调用方。如果不限制来源，任意网站都能用
+// 用户的浏览器向它发请求（CSRF），或通过 DNS rebinding 把跨站请求变成同源从而
+// 读走响应。仅监听 127.0.0.1 不足以防护后者 —— 浏览器看到的仍是这个端口。
+func (s *webServer) localOnly(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("X-Content-Type-Options", "nosniff")
+		w.Header().Set("Referrer-Policy", "no-referrer")
+		w.Header().Set("X-Frame-Options", "DENY")
+
+		if host := hostOnly(r.Host); !isLoopback(host) {
+			writeErr(w, http.StatusForbidden, "仅允许本机访问该服务")
+			return
+		}
+		if o := r.Header.Get("Origin"); o != "" {
+			if u, err := url.Parse(o); err != nil || !isLoopback(u.Hostname()) {
+				writeErr(w, http.StatusForbidden, "拒绝跨站请求")
+				return
+			}
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
+// hostOnly 去掉 Host 里的端口部分，无端口时原样返回。
+func hostOnly(host string) string {
+	if h, _, err := net.SplitHostPort(host); err == nil {
+		return h
+	}
+	return host
+}
+
+func isLoopback(host string) bool {
+	switch strings.ToLower(strings.Trim(host, "[]")) {
+	case "127.0.0.1", "localhost", "::1":
+		return true
+	}
+	return false
 }
 
 // ---------- 请求 / 响应结构 ----------
@@ -287,7 +342,32 @@ func (s *webServer) handleIndex(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.Header().Set("Cache-Control", "no-store")
-	_, _ = w.Write(s.index)
+	// 页面会渲染 GitHub 上陌生人写的内容，CSP 是万一某处转义漏了时的最后一道兜底。
+	// 用一次性 nonce 放行自家内联脚本，而不是开放 'unsafe-inline'
+	// —— 后者对注入的内联脚本同样放行，等于没加。
+	nonce, err := randomID()
+	if err != nil {
+		// 取不到随机数时退化为不带 nonce 的策略：宁可放宽 CSP，也不能渲染失败
+		log.Debugf("生成 CSP nonce 失败: %v", err)
+		w.Header().Set("Content-Security-Policy",
+			"default-src 'self'; style-src 'self' 'unsafe-inline'; "+
+				"img-src 'self' data:; object-src 'none'; base-uri 'none'; frame-ancestors 'none'")
+		_, _ = w.Write(s.index)
+		return
+	}
+	w.Header().Set("Content-Security-Policy",
+		fmt.Sprintf("default-src 'self'; script-src 'self' 'nonce-%s'; "+
+			"style-src 'self' 'nonce-%s'; img-src 'self' data:; "+
+			"object-src 'none'; base-uri 'none'; frame-ancestors 'none'", nonce, nonce))
+	_, _ = w.Write(withNonce(s.index, nonce))
+}
+
+// withNonce 把 nonce 注入内联 <script>/<style> 标签。
+func withNonce(tmpl []byte, nonce string) []byte {
+	s := string(tmpl)
+	s = strings.Replace(s, "<script>", `<script nonce="`+nonce+`">`, 1)
+	s = strings.Replace(s, "<style>", `<style nonce="`+nonce+`">`, 1)
+	return []byte(s)
 }
 
 func (s *webServer) handleHealth(w http.ResponseWriter, _ *http.Request) {
@@ -340,17 +420,20 @@ func (s *webServer) handleFetch(w http.ResponseWriter, r *http.Request) {
 
 	info, warnRepo, err := fetchRepoInfo(ctx, client, owner, repo)
 	if err != nil {
-		writeErr(w, http.StatusBadRequest, err.Error())
+		writeErr(w, githubErrorStatus(err), friendlyGitHubError(err, owner+"/"+repo).Error())
 		return
 	}
 
 	issues, err := fetchIssuesWithContext(ctx, client, owner, repo, req.IncludePR, maxIssuesPerRepo)
 	if err != nil {
-		writeErr(w, http.StatusBadGateway, err.Error())
+		// 分页阶段才是最容易触发限流的地方（5000 条 issue = 50 次请求，
+		// 匿名访问限额只有 60 次/小时），这里必须同样走友好翻译，
+		// 否则用户在这个最高频的失败路径上看到的是一整段英文原始错误。
+		writeErr(w, githubErrorStatus(err), friendlyGitHubError(err, owner+"/"+repo).Error())
 		return
 	}
 
-	var warnings []string
+	warnings := []string{}
 	if warnRepo != "" {
 		warnings = append(warnings, warnRepo)
 	}
@@ -390,7 +473,7 @@ func (s *webServer) handleFetch(w http.ResponseWriter, r *http.Request) {
 		case len(issues) == 0:
 			warnings = append(warnings, "没有 issue，跳过 AI 分析。")
 		default:
-			insight, err := aiOverview(issues, data, aiToken, s.opts.AIModel, s.opts.AIBaseURL)
+			insight, err := aiOverview(r.Context(), issues, data, aiToken, s.opts.AIModel, s.opts.AIBaseURL)
 			if err != nil {
 				warnings = append(warnings, fmt.Sprintf("AI 分析失败，已回退到本地统计：%v", err))
 			} else {
@@ -401,6 +484,26 @@ func (s *webServer) handleFetch(w http.ResponseWriter, r *http.Request) {
 	resp.Warnings = warnings
 
 	writeJSON(w, http.StatusOK, resp)
+}
+
+// githubErrorStatus 按错误性质给出合理状态码。
+// 之前不管 404、401 还是网络超时一律返回 400，把服务端/网络问题谎报成了客户端参数错误。
+func githubErrorStatus(err error) int {
+	if errors.Is(err, context.DeadlineExceeded) {
+		return http.StatusGatewayTimeout
+	}
+	var ge *github.ErrorResponse
+	if errors.As(err, &ge) && ge.Response != nil {
+		switch ge.Response.StatusCode {
+		case http.StatusUnauthorized, http.StatusForbidden, http.StatusNotFound:
+			return ge.Response.StatusCode
+		}
+	}
+	var rl *github.RateLimitError
+	if errors.As(err, &rl) {
+		return http.StatusTooManyRequests
+	}
+	return http.StatusBadGateway
 }
 
 func (s *webServer) handleAnalyze(w http.ResponseWriter, r *http.Request) {
@@ -430,7 +533,7 @@ func (s *webServer) handleAnalyze(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var warnings []string
+	warnings := []string{}
 	if len(selected) > maxSelected {
 		warnings = append(warnings, fmt.Sprintf("选中数量超过 %d，仅分析前 %d 个。", maxSelected, maxSelected))
 		selected = selected[:maxSelected]
@@ -438,28 +541,32 @@ func (s *webServer) handleAnalyze(w http.ResponseWriter, r *http.Request) {
 
 	comments := make(map[int][]*github.IssueComment)
 	if req.WithComments {
-		if len(selected) > maxCommentIssues {
-			warnings = append(warnings, fmt.Sprintf("选中数量超过 %d，已跳过评论拉取以节省 API 配额。", maxCommentIssues))
-		} else {
-			client, err := newGitHubClient(sess.Token, s.opts.APIBaseURL)
+		// 超量时截断成前 N 个，而不是整体跳过 —— 之前选中数在 50~300 之间时
+		// 一条评论都拉不到，用户明明勾了"包含评论"却拿到空数据，属于静默失效。
+		target := selected
+		if len(target) > maxCommentIssues {
+			warnings = append(warnings, fmt.Sprintf(
+				"选中数量超过 %d，仅为前 %d 个 issue 拉取评论以节省 API 配额。", maxCommentIssues, maxCommentIssues))
+			target = target[:maxCommentIssues]
+		}
+		client, err := newGitHubClient(sess.Token, s.opts.APIBaseURL)
+		if err != nil {
+			writeErr(w, http.StatusBadRequest, err.Error())
+			return
+		}
+		ctx, cancel := context.WithTimeout(r.Context(), githubTimeout)
+		defer cancel()
+		for _, it := range target {
+			// 评论数为 0 的 issue 不必发请求，省下的是真金白银的 API 配额
+			if it.GetComments() == 0 {
+				continue
+			}
+			cs, err := fetchCommentsWithContext(ctx, client, sess.Owner, sess.Repo, it.GetNumber())
 			if err != nil {
-				writeErr(w, http.StatusBadRequest, err.Error())
-				return
+				warnings = append(warnings, fmt.Sprintf("拉取 #%d 评论失败：%v", it.GetNumber(), err))
+				continue
 			}
-			ctx, cancel := context.WithTimeout(r.Context(), githubTimeout)
-			defer cancel()
-			for _, it := range selected {
-				// 评论数为 0 的 issue 不必发请求，省下的是真金白银的 API 配额
-				if it.GetComments() == 0 {
-					continue
-				}
-				cs, err := fetchCommentsWithContext(ctx, client, sess.Owner, sess.Repo, it.GetNumber())
-				if err != nil {
-					warnings = append(warnings, fmt.Sprintf("拉取 #%d 评论失败：%v", it.GetNumber(), err))
-					continue
-				}
-				comments[it.GetNumber()] = cs
-			}
+			comments[it.GetNumber()] = cs
 		}
 	}
 
@@ -475,7 +582,7 @@ func (s *webServer) handleAnalyze(w http.ResponseWriter, r *http.Request) {
 		if aiToken == "" {
 			warnings = append(warnings, "未配置 AI Token，深度分析仅使用本地规则引擎。")
 		} else {
-			out, err := aiDeepInsight(selected, items, aiToken, s.opts.AIModel, s.opts.AIBaseURL)
+			out, err := aiDeepInsight(r.Context(), selected, items, aiToken, s.opts.AIModel, s.opts.AIBaseURL)
 			if err != nil {
 				warnings = append(warnings, fmt.Sprintf("AI 分析失败，已回退到本地规则：%v", err))
 			} else {
@@ -539,7 +646,7 @@ func (s *webServer) handleExport(w http.ResponseWriter, r *http.Request) {
 	}
 
 	comments := make(map[int][]*github.IssueComment)
-	var warnings []string
+	warnings := []string{}
 	if req.WithComments {
 		if len(list) > maxCommentIssues {
 			warnings = append(warnings, fmt.Sprintf("数量超过 %d，已跳过评论导出。", maxCommentIssues))
@@ -644,14 +751,16 @@ func newGitHubClient(token, baseURL string) (*github.Client, error) {
 	return client, nil
 }
 
-// fetchRepoInfo 获取仓库基础信息，并把 API 错误翻译成面向用户的提示。
+// fetchRepoInfo 获取仓库基础信息。
+// 返回的错误保持原始类型，翻译与状态码映射统一由调用方（handleFetch）处理，
+// 否则包一层 fmt.Errorf 会让 errors.As 再也认不出 401/403/404。
 func fetchRepoInfo(ctx context.Context, client *github.Client, owner, repo string) (repoInfo, string, error) {
 	r, resp, err := client.Repositories.Get(ctx, owner, repo)
 	if err != nil {
-		return repoInfo{}, "", friendlyGitHubError(err, owner+"/"+repo)
+		return repoInfo{}, "", err
 	}
 	var warn string
-	if resp != nil && resp.Rate.Remaining == 0 {
+	if resp != nil && resp.Rate.Limit > 0 && resp.Rate.Remaining == 0 {
 		warn = "GitHub API 配额已用尽，请稍后重试或填写 Token 提升配额。"
 	}
 
@@ -703,12 +812,16 @@ func friendlyGitHubError(err error, fullName string) error {
 		return fmt.Errorf("GitHub API 限流（配额 %d 已用尽，%s 后重置），建议填写 Token 后重试",
 			rl.Rate.Limit, rl.Rate.Reset.Time.Format("15:04:05"))
 	}
-	return fmt.Errorf("获取仓库信息失败：%v", err)
+	var ne *net.OpError
+	if errors.As(err, &ne) {
+		return fmt.Errorf("无法连接 GitHub（%s），请检查网络或代理设置", ne.Op)
+	}
+	return fmt.Errorf("GitHub 接口调用失败：%v", err)
 }
 
 // ---------- AI ----------
 
-func aiOverview(issues []*github.Issue, data DashboardData, token, model, baseURL string) (string, error) {
+func aiOverview(ctx context.Context, issues []*github.Issue, data DashboardData, token, model, baseURL string) (string, error) {
 	if len(issues) == 0 {
 		return "", errors.New("没有 issue 可供分析")
 	}
@@ -728,10 +841,10 @@ func aiOverview(issues []*github.Issue, data DashboardData, token, model, baseUR
 		}
 		b.WriteString(fmt.Sprintf("- #%d [%s] %s\n", it.Number, it.State, it.Title))
 	}
-	return callAI(b.String(), token, model, baseURL)
+	return callAI(ctx, b.String(), token, model, baseURL)
 }
 
-func aiDeepInsight(issues []*github.Issue, items []issueAnalysis, token, model, baseURL string) (string, error) {
+func aiDeepInsight(ctx context.Context, issues []*github.Issue, items []issueAnalysis, token, model, baseURL string) (string, error) {
 	if len(issues) == 0 {
 		return "", errors.New("没有 issue 可供分析")
 	}
@@ -754,11 +867,12 @@ func aiDeepInsight(issues []*github.Issue, items []issueAnalysis, token, model, 
 		}
 		b.WriteString(fmt.Sprintf("### #%d [%s/%s] %s\n%s\n\n", it.Number, it.State, it.Category, it.Title, body))
 	}
-	return callAI(b.String(), token, model, baseURL)
+	return callAI(ctx, b.String(), token, model, baseURL)
 }
 
 // callAI 调用 OpenAI 兼容接口；失败时返回 error，由调用方降级到本地统计。
-func callAI(prompt, token, model, baseURL string) (string, error) {
+// ctx 从 HTTP 请求透传而来：用户关掉标签页时能立刻中止大模型请求，不再空跑满 3 分钟。
+func callAI(ctx context.Context, prompt, token, model, baseURL string) (string, error) {
 	if token == "" {
 		return "", errors.New("未提供 AI Token")
 	}
@@ -766,7 +880,7 @@ func callAI(prompt, token, model, baseURL string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), aiTimeout)
+	ctx, cancel := context.WithTimeout(ctx, aiTimeout)
 	defer cancel()
 
 	out, err := generateFromPrompt(ctx, llm, prompt)

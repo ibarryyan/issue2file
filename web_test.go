@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -55,6 +56,14 @@ type fakeGitHub struct {
 	comments map[int][]*github.IssueComment
 	// notFound 为真时所有接口都返回 404，用来模拟私有仓库 / 仓库不存在
 	notFound bool
+	// requireToken 为真时没有 Authorization 头的请求一律 401，
+	// 用来验证「填了 Token 就能访问私有仓库」这条需求真的成立
+	requireToken bool
+	// issuesForbidden 为真时分页拉取 issue 的接口返回 403，
+	// 用来覆盖最容易触发限流的那一步（而不是只有仓库信息那一步）
+	issuesForbidden bool
+	// seenAuth 记录替身实际收到的 Authorization 头，用于断言 Token 确实被带过去了
+	seenAuth []string
 }
 
 func (f *fakeGitHub) start(t *testing.T) *httptest.Server {
@@ -73,7 +82,22 @@ func (f *fakeGitHub) start(t *testing.T) *httptest.Server {
 		return ts
 	}
 
+	authOK := func(w http.ResponseWriter, r *http.Request) bool {
+		auth := r.Header.Get("Authorization")
+		f.seenAuth = append(f.seenAuth, auth)
+		if f.requireToken && !strings.HasPrefix(auth, "Bearer ") {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusUnauthorized)
+			_, _ = w.Write([]byte(`{"message":"Requires authentication"}`))
+			return false
+		}
+		return true
+	}
+
 	mux.HandleFunc(base, func(w http.ResponseWriter, r *http.Request) {
+		if !authOK(w, r) {
+			return
+		}
 		writeFakeJSON(w, map[string]any{
 			"full_name":         f.owner + "/" + f.repo,
 			"name":              f.repo,
@@ -93,6 +117,15 @@ func (f *fakeGitHub) start(t *testing.T) *httptest.Server {
 		})
 	})
 	mux.HandleFunc(base+"/issues", func(w http.ResponseWriter, r *http.Request) {
+		if !authOK(w, r) {
+			return
+		}
+		if f.issuesForbidden {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusForbidden)
+			_, _ = w.Write([]byte(`{"message":"API rate limit exceeded for 127.0.0.1"}`))
+			return
+		}
 		page := r.URL.Query().Get("page")
 		if page != "" && page != "1" && page != "0" {
 			writeFakeJSON(w, []*github.Issue{})
@@ -101,6 +134,9 @@ func (f *fakeGitHub) start(t *testing.T) *httptest.Server {
 		writeFakeJSON(w, f.issues)
 	})
 	mux.HandleFunc(base+"/issues/", func(w http.ResponseWriter, r *http.Request) {
+		if !authOK(w, r) {
+			return
+		}
 		rest := strings.TrimPrefix(r.URL.Path, base+"/issues/")
 		num := 0
 		if _, err := fmt.Sscanf(rest, "%d/comments", &num); err != nil {
@@ -140,7 +176,7 @@ func postJSON(t *testing.T, srv *webServer, path string, body any, out any) int 
 	if err != nil {
 		t.Fatalf("序列化请求失败: %v", err)
 	}
-	req := httptest.NewRequest(http.MethodPost, path, strings.NewReader(string(raw)))
+	req := localRequest(http.MethodPost, path, strings.NewReader(string(raw)))
 	req.Header.Set("Content-Type", "application/json")
 	rec := httptest.NewRecorder()
 	srv.routes().ServeHTTP(rec, req)
@@ -152,6 +188,15 @@ func postJSON(t *testing.T, srv *webServer, path string, body any, out any) int 
 	return rec.Code
 }
 
+// localRequest 构造一个带本地 Host 的请求。
+// httptest.NewRequest 默认 Host 是 example.com，会被服务端的本机访问校验挡掉；
+// 这里显式置成 127.0.0.1，让测试走真实请求链路（含这道校验）。
+func localRequest(method, path string, body io.Reader) *http.Request {
+	req := httptest.NewRequest(method, path, body)
+	req.Host = "127.0.0.1:8080"
+	return req
+}
+
 type errBody struct {
 	Error string `json:"error"`
 }
@@ -160,7 +205,7 @@ type errBody struct {
 
 func TestIndexPage_ServedWithMarkers(t *testing.T) {
 	srv := testServer(t, "")
-	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	req := localRequest(http.MethodGet, "/", nil)
 	rec := httptest.NewRecorder()
 	srv.routes().ServeHTTP(rec, req)
 
@@ -180,7 +225,7 @@ func TestIndexPage_ServedWithMarkers(t *testing.T) {
 
 func TestIndexPage_UnknownPathIs404(t *testing.T) {
 	srv := testServer(t, "")
-	req := httptest.NewRequest(http.MethodGet, "/nope", nil)
+	req := localRequest(http.MethodGet, "/nope", nil)
 	rec := httptest.NewRecorder()
 	srv.routes().ServeHTTP(rec, req)
 	if rec.Code != http.StatusNotFound {
@@ -193,7 +238,7 @@ func TestHandleConfig_ReportsTokenState(t *testing.T) {
 	if err != nil {
 		t.Fatalf("创建失败: %v", err)
 	}
-	req := httptest.NewRequest(http.MethodGet, "/api/config", nil)
+	req := localRequest(http.MethodGet, "/api/config", nil)
 	rec := httptest.NewRecorder()
 	srv.routes().ServeHTTP(rec, req)
 
@@ -271,8 +316,9 @@ func TestHandleFetch_PrivateRepoWithoutToken(t *testing.T) {
 
 	var got errBody
 	code := postJSON(t, srv, "/api/fetch", fetchRequest{Repo: "o/r"}, &got)
-	if code != http.StatusBadRequest {
-		t.Fatalf("期望 400，实际 %d", code)
+	// 仓库不存在 / 无权限是 GitHub 返回的 404，应当原样透传而不是谎报成 400
+	if code != http.StatusNotFound {
+		t.Fatalf("期望 404，实际 %d", code)
 	}
 	if !strings.Contains(got.Error, "私有仓库") || !strings.Contains(got.Error, "Token") {
 		t.Fatalf("404 场景应提示填写 Token，实际: %s", got.Error)
@@ -323,7 +369,7 @@ func TestHandleFetch_InvalidInputs(t *testing.T) {
 
 func TestHandleFetch_MethodNotAllowed(t *testing.T) {
 	srv := testServer(t, "")
-	req := httptest.NewRequest(http.MethodGet, "/api/fetch", nil)
+	req := localRequest(http.MethodGet, "/api/fetch", nil)
 	rec := httptest.NewRecorder()
 	srv.routes().ServeHTTP(rec, req)
 	if rec.Code != http.StatusMethodNotAllowed {
@@ -333,7 +379,7 @@ func TestHandleFetch_MethodNotAllowed(t *testing.T) {
 
 func TestHandleFetch_BadJSON(t *testing.T) {
 	srv := testServer(t, "")
-	req := httptest.NewRequest(http.MethodPost, "/api/fetch", strings.NewReader("{not json"))
+	req := localRequest(http.MethodPost, "/api/fetch", strings.NewReader("{not json"))
 	rec := httptest.NewRecorder()
 	srv.routes().ServeHTTP(rec, req)
 	if rec.Code != http.StatusBadRequest {
@@ -792,4 +838,210 @@ func min(a, b int) int {
 		return a
 	}
 	return b
+}
+
+// ---------- 本机访问校验 ----------
+
+func requestWithHost(host string) *http.Request {
+	req := localRequest(http.MethodGet, "/api/config", nil)
+	req.Host = host
+	return req
+}
+
+func TestLocalGuard_RejectsForeignHost(t *testing.T) {
+	srv := testServer(t, "")
+	rec := httptest.NewRecorder()
+	srv.routes().ServeHTTP(rec, requestWithHost("evil.example.com"))
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("非本机 Host 应被拒绝，实际 %d", rec.Code)
+	}
+}
+
+func TestLocalGuard_AllowsLoopbackHosts(t *testing.T) {
+	srv := testServer(t, "")
+	for _, host := range []string{"127.0.0.1:8080", "localhost:9000", "[::1]:1234"} {
+		rec := httptest.NewRecorder()
+		srv.routes().ServeHTTP(rec, requestWithHost(host))
+		if rec.Code != http.StatusOK {
+			t.Fatalf("回环地址 %s 应放行，实际 %d", host, rec.Code)
+		}
+	}
+}
+
+func TestLocalGuard_RejectsCrossSiteOrigin(t *testing.T) {
+	srv := testServer(t, "")
+	req := localRequest(http.MethodGet, "/api/config", nil)
+	req.Header.Set("Origin", "https://evil.example.com")
+	rec := httptest.NewRecorder()
+	srv.routes().ServeHTTP(rec, req)
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("跨站 Origin 应被拒绝，实际 %d", rec.Code)
+	}
+}
+
+func TestIndexPage_SecurityHeadersAndNonce(t *testing.T) {
+	srv := testServer(t, "")
+	rec := httptest.NewRecorder()
+	srv.routes().ServeHTTP(rec, localRequest(http.MethodGet, "/", nil))
+
+	body := rec.Body.String()
+	csp := rec.Header().Get("Content-Security-Policy")
+	if csp == "" {
+		t.Fatal("首页缺少 CSP 响应头")
+	}
+	if strings.Contains(csp, "unsafe-inline") {
+		t.Fatalf("CSP 不应开放 unsafe-inline，否则等于没加: %s", csp)
+	}
+	// 内联 <script> 带了 nonce 才能在不开放 unsafe-inline 的前提下执行
+	nonce := ""
+	if i := strings.Index(csp, "'nonce-"); i >= 0 {
+		rest := csp[i+len("'nonce-"):]
+		nonce = rest[:strings.Index(rest, "'")]
+	}
+	if nonce == "" {
+		t.Fatalf("CSP 里没找到 nonce: %s", csp)
+	}
+	if !strings.Contains(body, `nonce="`+nonce+`"`) {
+		t.Fatal("内联 script/style 没有带上对应的 nonce")
+	}
+	if rec.Header().Get("X-Content-Type-Options") != "nosniff" {
+		t.Fatal("缺少 X-Content-Type-Options")
+	}
+}
+
+// ---------- Token 链路 ----------
+
+func TestHandleFetch_TokenReachesGitHubAndIsNotEchoedBack(t *testing.T) {
+	const secret = "ghp_SECRET123"
+	fake := &fakeGitHub{owner: "o", repo: "r", requireToken: true,
+		issues: []*github.Issue{webIssue(1, "open", "私有 issue", "内容不外传", "2024-01-01", "", false)}}
+	srv := testServer(t, fake.start(t).URL+"/")
+
+	raw, err := json.Marshal(fetchRequest{Repo: "o/r", Token: secret})
+	if err != nil {
+		t.Fatal(err)
+	}
+	req := localRequest(http.MethodPost, "/api/fetch", strings.NewReader(string(raw)))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	srv.routes().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("带 Token 访问私有仓库应成功，实际 %d / %s", rec.Code, rec.Body.String())
+	}
+	// Token 必须真的到达 GitHub，否则「填了 Token 就能拉私有仓库」这条需求没有任何保障
+	if len(fake.seenAuth) == 0 || !strings.HasPrefix(fake.seenAuth[0], "Bearer "+secret) {
+		t.Fatalf("GitHub 替身没收到正确的 Authorization: %+v", fake.seenAuth)
+	}
+	// 反过来，Token 不能被回显给用户
+	if strings.Contains(rec.Body.String(), secret) || strings.Contains(rec.Header().Get("Set-Cookie"), secret) {
+		t.Fatal("Token 泄漏到了响应中")
+	}
+}
+
+func TestHandleFetch_WithoutTokenPrivateRepoFails(t *testing.T) {
+	fake := &fakeGitHub{owner: "o", repo: "r", requireToken: true}
+	srv := testServer(t, fake.start(t).URL+"/")
+
+	var got errBody
+	code := postJSON(t, srv, "/api/fetch", fetchRequest{Repo: "o/r"}, &got)
+	if code != http.StatusUnauthorized {
+		t.Fatalf("无 Token 访问私有仓库应返回 401，实际 %d", code)
+	}
+	if !strings.Contains(got.Error, "Token") {
+		t.Fatalf("应提示 Token 无效，实际: %s", got.Error)
+	}
+}
+
+// ---------- 分页阶段的错误翻译 ----------
+
+func TestHandleFetch_Issues403IsTranslated(t *testing.T) {
+	fake := &fakeGitHub{owner: "o", repo: "r", issuesForbidden: true}
+	srv := testServer(t, fake.start(t).URL+"/")
+
+	var got errBody
+	code := postJSON(t, srv, "/api/fetch", fetchRequest{Repo: "o/r"}, &got)
+	if code != http.StatusForbidden {
+		t.Fatalf("分页 403 应原样返回 403，实际 %d", code)
+	}
+	if got.Error == "" || strings.Contains(got.Error, "http://") || strings.Contains(got.Error, "API rate limit exceeded") {
+		t.Fatalf("分页阶段的错误应被翻译成中文提示，实际: %s", got.Error)
+	}
+}
+
+// ---------- 会话 LRU ----------
+
+func TestSessionStore_LRUKeepsRecentlyUsed(t *testing.T) {
+	store := newSessionStore(time.Hour, 2)
+	a := store.Put("o", "a", "", nil).ID
+	b := store.Put("o", "b", "", nil).ID
+
+	// 先碰一下 b，再反复访问 a，使 a 成为最近使用、b 成为最久未用
+	if store.Get(b) == nil {
+		t.Fatal("b 不应消失")
+	}
+	for i := 0; i < 3; i++ {
+		if store.Get(a) == nil {
+			t.Fatal("a 不应消失")
+		}
+	}
+	store.Put("o", "c", "", nil)
+
+	if store.Get(a) == nil {
+		t.Fatal("a 刚刚还在反复使用，不应被淘汰（FIFO 实现会误伤这里）")
+	}
+	if store.Get(b) != nil {
+		t.Fatal("b 最久未使用，应当被淘汰")
+	}
+	store.mu.Lock()
+	n := len(store.items)
+	store.mu.Unlock()
+	if n != 2 {
+		t.Fatalf("容量上限应控制在 2，实际 %d", n)
+	}
+}
+
+// ---------- 响应形状 ----------
+
+// warnings 必须始终是数组而不是 null：
+// 同一个结构体里 aiInsight 是 ""、ageDist 是 []，唯独 null 会让前端必须同时处理三种形态。
+func TestResponses_NeverEmitNullWarnings(t *testing.T) {
+	fake := &fakeGitHub{owner: "o", repo: "r",
+		issues: []*github.Issue{webIssue(1, "open", "标题", "正文", "2024-01-01", "", false)}}
+	srv, err := newWebServer(webOptions{APIBaseURL: fake.start(t).URL + "/", GitHubToken: "ghp_local"})
+	if err != nil {
+		t.Fatalf("创建失败: %v", err)
+	}
+
+	var fr fetchResponse
+	postJSON(t, srv, "/api/fetch", fetchRequest{Repo: "o/r"}, &fr)
+
+	var ar analyzeResponse
+	postJSON(t, srv, "/api/analyze", analyzeRequest{SessionID: fr.SessionID, Numbers: []int{1}}, &ar)
+
+	// nil 切片会被 encoding/json 序列化成 null
+	if fr.Warnings == nil {
+		t.Fatal("/api/fetch 的 warnings 不应为 null 序列化")
+	}
+	if ar.Warnings == nil {
+		t.Fatal("/api/analyze 的 warnings 不应为 null 序列化")
+	}
+}
+
+// ---------- AI BaseURL 归一化 ----------
+
+func TestNormalizeAIBaseURL(t *testing.T) {
+	cases := []struct{ in, want string }{
+		{"https://api.deepseek.com/v1", "https://api.deepseek.com/v1"},
+		{"https://api.deepseek.com/v1/", "https://api.deepseek.com/v1"},
+		{"https://api.deepseek.com/v1/chat/completions", "https://api.deepseek.com/v1"},
+		{"https://api.deepseek.com/v1/chat/completions/", "https://api.deepseek.com/v1"},
+		{"  https://api.example.com/v3  ", "https://api.example.com/v3"},
+		{"", ""},
+	}
+	for _, c := range cases {
+		if got := normalizeAIBaseURL(c.in); got != c.want {
+			t.Fatalf("normalizeAIBaseURL(%q) = %q，期望 %q", c.in, got, c.want)
+		}
+	}
 }

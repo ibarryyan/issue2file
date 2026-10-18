@@ -13,10 +13,27 @@ import (
 )
 
 // 默认 AI 配置，与 main.go 中的 flag 默认值保持一致。
+//
+// 注意：这里的 baseURL 是"前缀"而非完整 endpoint —— langchaingo 会自己在后面
+// 拼上 /chat/completions（见 llms/openai/internal/openaiclient 的 buildURL）。
+// 写成 .../v1/chat/completions 会导致实际请求路径变成
+// /v1/chat/completions/chat/completions 而必然 404。
 const (
 	defaultAIModel   = "deepseek-chat"
-	defaultAIBaseURL = "https://api.deepseek.com/v1/chat/completions"
+	defaultAIBaseURL = "https://api.deepseek.com/v1"
 )
+
+// normalizeAIBaseURL 容错处理用户配置的地址：既允许填 https://host/v1，
+// 也允许填 .../v1/chat/completions（旧版本的默认值），统一收敛成"前缀"形式。
+func normalizeAIBaseURL(baseURL string) string {
+	u := strings.TrimSpace(baseURL)
+	if u == "" {
+		return ""
+	}
+	u = strings.TrimRight(u, "/")
+	u = strings.TrimSuffix(u, "/chat/completions")
+	return strings.TrimRight(u, "/")
+}
 
 // newLLMClient 创建 OpenAI 兼容的 LLM 客户端；model / baseURL 为空时回落默认值。
 func newLLMClient(token, model, baseURL string) (llms.Model, error) {
@@ -25,6 +42,8 @@ func newLLMClient(token, model, baseURL string) (llms.Model, error) {
 	}
 	if baseURL == "" {
 		baseURL = defaultAIBaseURL
+	} else {
+		baseURL = normalizeAIBaseURL(baseURL)
 	}
 	llm, err := openai.New(openai.WithToken(token), openai.WithModel(model), openai.WithBaseURL(baseURL))
 	if err != nil {
@@ -71,12 +90,15 @@ func generateAISummary(issues []*github.Issue, outputDirPath, summaryFile, aiTok
 		}
 	}
 
-	llm, err := openai.New(openai.WithToken(aiToken), openai.WithModel(aiModel), openai.WithBaseURL(aiBaseURL))
+	llm, err := newLLMClient(aiToken, aiModel, aiBaseURL)
 	if err != nil {
-		return fmt.Errorf("创建AI客户端失败: %w", err)
+		return err
 	}
 
-	completion, err := llms.GenerateFromSinglePrompt(context.Background(), llm, issuesData.String())
+	ctx, cancel := context.WithTimeout(context.Background(), aiTimeout)
+	defer cancel()
+
+	completion, err := generateFromPrompt(ctx, llm, issuesData.String())
 	if err != nil {
 		return fmt.Errorf("发送AI请求失败: %w", err)
 	}
