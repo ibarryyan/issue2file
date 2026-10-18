@@ -7,7 +7,7 @@
 <style>
 :root{
   --bg:#f5f6f8; --card:#ffffff; --border:#e4e7ec; --border-soft:#eef0f3;
-  --text:#15181d; --muted:#667085; --faint:#98a2b3;
+  --text:#15181d; --muted:#667085; --faint:#667085;
   --primary:#4f46e5; --primary-dark:#4338ca; --primary-soft:#eef2ff;
   --danger:#b42318; --danger-soft:#fef3f2; --warn:#b54708; --warn-soft:#fffaeb;
   --ok:#067647; --ok-soft:#ecfdf3;
@@ -15,6 +15,10 @@
   --radius:12px;
 }
 *{box-sizing:border-box}
+/* UA 样式表的 [hidden]{display:none} 会被作者样式表的 display 规则覆盖，
+   而下面多处 .adv/.loading/.action-bar/.btn 都设了 display，必须显式兜底，
+   否则 hidden 属性对这些元素完全失效。 */
+[hidden]{display:none!important}
 html,body{margin:0;padding:0}
 body{
   background:var(--bg); color:var(--text);
@@ -176,7 +180,7 @@ section{margin-bottom:18px}
 .issue-table .col-check{width:36px;text-align:center}
 .issue-table input[type=checkbox]{width:15px;height:15px;accent-color:var(--primary);cursor:pointer}
 .num{font-weight:600;color:var(--muted);white-space:nowrap}
-.title-cell{max-width:520px}
+.title-cell{max-width:520px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .title-cell a{color:var(--text);font-weight:550}
 .title-cell a:hover{color:var(--primary)}
 .state{font-size:11px;font-weight:650;padding:2px 8px;border-radius:999px;white-space:nowrap}
@@ -253,11 +257,11 @@ section{margin-bottom:18px}
       <div id="advPanel" class="adv" hidden>
         <label class="field">
           <span>GitHub Token<small>私有仓库必填；仅用于本次请求，不会写入磁盘或日志</small></span>
-          <input id="tokenInput" type="password" placeholder="ghp_xxx / github_pat_xxx" spellcheck="false">
+          <input id="tokenInput" type="password" autocomplete="new-password" placeholder="ghp_xxx / github_pat_xxx" spellcheck="false">
         </label>
         <label class="field">
           <span>AI Token<small>可选，用于生成 AI 洞察；服务端已配置时可留空</small></span>
-          <input id="aiTokenInput" type="password" placeholder="sk-xxx" spellcheck="false">
+          <input id="aiTokenInput" type="password" autocomplete="new-password" placeholder="sk-xxx" spellcheck="false">
         </label>
         <div class="checks">
           <label class="check"><input type="checkbox" id="includePR"> 包含 Pull Request</label>
@@ -425,7 +429,6 @@ function esc(s){
   }[c]));
 }
 function num(v){ return typeof v === 'number' && isFinite(v) ? v : 0; }
-function fmtDay(p){ return p == null ? '—' : p + ' 天'; }
 
 /* ---------------- 极简 Markdown 渲染 ---------------- */
 function inlineMd(s){
@@ -516,7 +519,7 @@ function mdToHtml(src){
 /* ---------------- SVG 图表 ---------------- */
 function emptySVG(text){
   return '<svg viewBox="0 0 560 120" width="100%" height="120" role="img">'
-    + '<text x="280" y="64" text-anchor="middle" font-size="13" fill="#98a2b3">' + esc(text) + '</text></svg>';
+    + '<text x="280" y="64" text-anchor="middle" font-size="13" fill="#667085">' + esc(text) + '</text></svg>';
 }
 function donutSVG(items){
   if (!items || !items.length) return emptySVG('暂无数据');
@@ -576,25 +579,34 @@ function lineSVG(points){
   for (let g = 0; g <= 4; g++) {
     const v = maxV * g / 4, yy = y(v);
     s += '<line x1="' + padL + '" y1="' + yy.toFixed(1) + '" x2="' + (W - padR) + '" y2="' + yy.toFixed(1) + '" stroke="#eef0f3" stroke-width="1"/>';
-    s += '<text x="' + (padL - 6) + '" y="' + (yy + 4).toFixed(1) + '" text-anchor="end" font-size="10" fill="#98a2b3">' + Math.round(v) + '</text>';
+    s += '<text x="' + (padL - 6) + '" y="' + (yy + 4).toFixed(1) + '" text-anchor="end" font-size="10" fill="#667085">' + Math.round(v) + '</text>';
   }
   const series = [['created', '#4f46e5'], ['closed', '#10b981'], ['backlog', '#f59e0b']];
   series.forEach((pair) => {
+    const [key, color] = pair;
     let d = '';
     points.forEach((p, i) => {
-      d += (i === 0 ? 'M' : 'L') + x(i).toFixed(1) + ',' + y(num(p[pair[0]])).toFixed(1) + ' ';
+      d += (i === 0 ? 'M' : 'L') + x(i).toFixed(1) + ',' + y(num(p[key])).toFixed(1) + ' ';
     });
-    s += '<path d="' + d.trim() + '" fill="none" stroke="' + pair[1] + '" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>';
+    if (n === 1) {
+      // 只有一个数据点时 path 只有 moveto 不会绘制任何像素，补一小段水平线，
+      // 否则新仓库（全部 issue 落在同一个月）会出现"图中明明有数据却什么都看不到"。
+      const px = x(0), py = y(num(points[0][key]));
+      d = 'M' + (px - 1).toFixed(1) + ',' + py.toFixed(1) + ' L' + (px + 1).toFixed(1) + ',' + py.toFixed(1);
+    }
+    s += '<path d="' + d.trim() + '" fill="none" stroke="' + color + '" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>';
   });
   if (n <= 30) {
     points.forEach((p, i) => {
-      s += '<circle cx="' + x(i).toFixed(1) + '" cy="' + y(num(p.created)).toFixed(1) + '" r="2.6" fill="#4f46e5"/>';
+      series.forEach((pair) => {
+        s += '<circle cx="' + x(i).toFixed(1) + '" cy="' + y(num(p[pair[0]])).toFixed(1) + '" r="2.6" fill="' + pair[1] + '"/>';
+      });
     });
   }
   const step = Math.max(1, Math.ceil(n / 12));
   points.forEach((p, i) => {
     if (i % step === 0 || i === n - 1) {
-      s += '<text x="' + x(i).toFixed(1) + '" y="' + (H - padB + 18) + '" text-anchor="middle" font-size="10" fill="#98a2b3">' + esc(p.month) + '</text>';
+      s += '<text x="' + x(i).toFixed(1) + '" y="' + (H - padB + 18) + '" text-anchor="middle" font-size="10" fill="#667085">' + esc(p.month) + '</text>';
     }
   });
   return s + '</svg>';
@@ -611,8 +623,13 @@ const state = {
   aiInsight: '',
   selected: new Set(),
   deepReport: '',
+  // 记录 deepReport 是针对哪一批 issue 生成的，换选后不能直接复用
+  deepReportKey: '',
   deepItems: []
 };
+
+// 选中集合的稳定指纹，用于判断缓存的深度分析报告是否仍然匹配
+function selectionKey(){ return Array.from(state.selected).sort((a, b) => a - b).join(','); }
 
 async function api(path, body){
   let res;
@@ -668,6 +685,7 @@ async function onFetch(e){
     state.aiInsight = data.aiInsight || '';
     state.selected = new Set();
     state.deepReport = '';
+    state.deepReportKey = '';
     state.deepItems = [];
 
     renderWarnings(data.warnings);
@@ -804,7 +822,7 @@ function renderList(){
       const checked = state.selected.has(it.number) ? ' checked' : '';
       const labels = (it.labels || []).map((l) => '<span class="lab">' + esc(l) + '</span>').join('');
       return '<tr data-num="' + it.number + '">'
-        + '<td class="col-check"><input type="checkbox" data-num="' + it.number + '"' + checked + '></td>'
+        + '<td class="col-check"><input type="checkbox" data-num="' + it.number + '"' + checked + ' aria-label="选择 issue #' + it.number + ' ' + esc(it.title) + '"></td>'
         + '<td class="num">#' + it.number + '</td>'
         + '<td class="title-cell"><a href="' + esc(it.url) + '" target="_blank" rel="noopener">' + esc(it.title) + '</a></td>'
         + '<td><span class="state ' + esc(it.state) + '">' + (it.state === 'open' ? '未关闭' : '已关闭') + '</span></td>'
@@ -859,6 +877,7 @@ async function onDeep(){
       useAI: $('useAI').checked
     });
     state.deepReport = data.report || '';
+    state.deepReportKey = selectionKey();
     state.deepItems = data.items || [];
     renderDeep(data);
     $('deepSection').hidden = false;
@@ -978,7 +997,12 @@ $('searchInput').addEventListener('input', renderList);
 $('stateFilter').addEventListener('change', renderList);
 $('sortSelect').addEventListener('change', renderList);
 $('btnDeep').addEventListener('click', onDeep);
-$('btnExportSel').addEventListener('click', () => doExport(Array.from(state.selected), state.deepReport));
+$('btnExportSel').addEventListener('click', () => {
+  // 只有当本次选中集合与生成深度报告的那批完全一致时才附报告，
+  // 否则会把上一次的分析报告混进毫不相干的 issue 文件里。
+  const report = (selectionKey() === state.deepReportKey) ? state.deepReport : '';
+  doExport(Array.from(state.selected), report);
+});
 $('btnExportAll').addEventListener('click', () => doExport([], state.report));
 $('btnDownloadReport').addEventListener('click', () => {
   const name = 'issues_report_' + (state.owner || 'repo') + '_' + (state.repo || 'export') + '.md';
